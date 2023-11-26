@@ -1,6 +1,8 @@
-from axone.node import Node
-import time, json
+import json
 import logging
+import time
+
+from axone.node import Node
 
 logging.basicConfig(level=logging.DEBUG)
 
