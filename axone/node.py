@@ -1,14 +1,26 @@
-from concurrent.futures import ThreadPoolExecutor
-from threading import Thread
-import random
-import string
-import json, logging
+import json
+import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Dict, List, Optional, Union
+
 from .shared_memory_dict import SharedMemoryDict
-from typing import Any, Optional, List, Tuple, Dict, Union, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 5
+
+
+# class ArgumentType(enum.Enum):
+#     """Argument type."""
+
+#     STRING = 1, "str"
+#     INTEGER = 2, 1
+#     FLOAT = 3, 1.2
+#     BOOLEAN = 4, True
+
+#     def __init__(self, _value, _type) -> None:
+#         self.value = _value
+#         self.type = _type
 
 
 class Node:
@@ -41,10 +53,10 @@ class Node:
         # The actions are registered as a dictionary of key-value pairs
         # The key is the name of the action
         # The value is a dictionary of the arguments name and type of the action
-        self.actions = actions
-        # Ensure parameters are json serializable
-        if self.parameters is not None:
-            self.parameters = json.dumps(self.parameters)
+        # self.actions = actions
+        # # Ensure parameters are json serializable
+        # if self.actions is not None:
+        #     self.actions = json.dumps(self.actions)
 
         # Register node on the memory
         self._register_node()
@@ -54,11 +66,14 @@ class Node:
 
     def _get_node_id(self) -> str:
         """Generate a unique node id."""
-        return "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        return (
+            self.name
+        )  # "".join(random.choices(string.ascii_letters + string.digits, k=10))
 
     def _register_node(self) -> None:
         """Register node on the memory."""
-        db = self._memory.get("__nodes", {})
+        # TODO:  https://stackoverflow.com/questions/16676177/setting-an-item-in-nested-dictionary-with-setitem
+        db = self._memory.get("__nodes", default={})
 
         # Register node within __nodes if not already registered
         if self._node_id not in db:
@@ -76,6 +91,7 @@ class Node:
         # Write back to memory
         self._memory["__nodes"] = db
 
+    # %% Publish functions
     def publish_once(
         self,
         topic: str,
@@ -98,16 +114,16 @@ class Node:
         }
 
         # Check if the topic is available
-        if self._memory.get(topic, {}).get("__source") == self._node_id:
+        if self._memory.get(topic, default={}).get("__source") == self._node_id:
             # Topic is available
-            self._memory[topic] = message.update(properties)
+            self._memory[topic] = message | properties
         elif (
-            self._memory.get(topic, {}).get("__timestamp", 0)
-            + self._memory.get(topic, {}).get("__rate", 0)
+            self._memory.get(topic, default={}).get("__timestamp", 0)
+            + self._memory.get(topic, default={}).get("__rate", 0)
             < time.time() + DEFAULT_TIMEOUT
         ):
             # Topic is available after timeout
-            self._memory[topic] = message.update(properties)
+            self._memory[topic] = message | properties
         else:
             # Topic is not available
             logger.error(
@@ -116,15 +132,27 @@ class Node:
 
     def register_publish(self, topic: str, message: Any, rate: float = 0) -> None:
         """Publish a message on a topic."""
+        logging.debug("Registering publisher", topic, message, rate)
         # Initialize a Thread to publish to the topic periodically
         self._executor.submit(self._publish, topic, message, rate)
 
     def _publish(self, topic: str, message: Any, rate: float = 0) -> None:
         """Publish a message on a topic."""
         while True:
-            self.publish_once(topic, message)
+            logging.debug(
+                "Publishing",
+                topic,
+                message if not callable(message) else message(),
+                rate,
+            )
+            self.publish_once(
+                topic,
+                message if not callable(message) else message(),
+                rate,
+            )
             time.sleep(1 / float(rate))
 
+    # %% Subscribe functions
     def register_subscribe(self, topic: str, callback: Callable) -> None:
         """Subscribe to a topic."""
         # Initialize a Thread to listen to the topic periodically
@@ -132,28 +160,60 @@ class Node:
 
     def _listen(self, topic: str, callback: Callable) -> None:
         """Listen to a topic."""
+        _last_message = None
+        _retry = 0  # TODO: Add a global variable for max counter
         while True:
-            db = self._memory.get(topic, {})
+            db = self._memory.get(topic, default={})
+
             if db:  # Topic is available
+                if db != _last_message:
+                    _last_message = db
+                    _retry = 0
+                    callback(db)
+                else:
+                    _retry = min(10, _retry + 1)
+
                 timestamp = db.get("__timestamp", 0)
                 rate = db.get("__rate", -1)
-                if timestamp + 1 / float(rate) < time.time():
-                    # Topic is available after timeout
-                    callback(self._memory.get(topic))
 
-                    # Sleep until the next message
-                    # Try to align the message with the rate as much as possible
-                    if rate > 0:
-                        time.sleep(max(0, 1 / float(rate) - time.time() + timestamp))
-                    else:
-                        # If rate is not specified, then sleep for 1 second
-                        time.sleep(1)
+                # Sleep until the next message
+                if rate > 0 and _retry < 10:
+                    # Try to align the subscription with the publishing rate as much as possible
+                    time.sleep(max(0, 1 / float(rate) - time.time() + timestamp))
                 else:
-                    # Topic is not available
-                    logger.error(
-                        f"Topic {topic} is not available for node {self._node_id}:{self.name} to subscribe."
-                    )
+                    # If rate is not specified, then sleep for 1 second
+                    time.sleep(1)
+
             else:  # No topic with this name is available
-                logger.error(
-                    f"No topic with name {topic} has been puclished for node {self._node_id}:{self.name} to subscribe."
-                )
+                pass
+                # logger.error(
+                #     f"No topic with name {topic} has been puclished for node {self._node_id}:{self.name} to subscribe."
+                # )
+
+    # %% Action functions
+    def register_action(self, action: str, callback: Callable) -> None:
+        """Register an action."""
+        # Initialize a Thread to listen to the action periodically
+        self._executor.submit(self._listen_action, action, callback)
+
+    def action(self, action: str, **kwargs: Any) -> None:
+        """Call an action."""
+        # Check if the action is available
+        if self._memory.get(action, default={}).get("__source") == self._node_id:
+            # Action is available
+            self._memory[action] = kwargs.update(
+                {
+                    "__source": self._node_id,
+                    "__timestamp": time.time(),
+                }
+            )
+        else:
+            # Action is not available
+            logger.error(
+                f"Action {action} is not available for node {self._node_id}:{self.name} to call."
+            )
+
+    def search_node_by_name(self, name: str) -> List[str]:
+        """Search for a node by name."""
+        nodes = self._memory.get("__nodes", default={})
+        return [node for node in nodes if nodes[node]["name"] == name]
