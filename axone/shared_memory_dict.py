@@ -40,6 +40,12 @@ class SharedMemoryDict:
         )
         self._ensure_memory_initialization()
 
+        self._size = 0
+
+    @property
+    def size(self) -> int:
+        return self._size
+
     def _ensure_memory_initialization(self):
         memory_is_empty = bytes(self._memory_block.buf).split(NULL_BYTE, 1)[0] == b""
         if memory_is_empty:
@@ -206,10 +212,13 @@ class SharedMemoryDict:
 
     def _save_memory(self, db: Dict[str, Any]) -> None:
         data = self._serializer.dumps(db)
+        self._size = len(data)
         try:
             self._memory_block.buf[: len(data)] = data
         except ValueError as exc:
-            raise ValueError("exceeds available storage") from exc
+            raise ValueError(
+                f"exceeds available storage {self._size} > {self._memory_block._size}"
+            ) from exc
 
     def _read_memory(self) -> Dict[str, Any]:
         return self._serializer.loads(self._memory_block.buf.tobytes())
