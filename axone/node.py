@@ -46,16 +46,40 @@ class Node:
 
     def _register_node(self) -> None:
         """Register node on the memory."""
+        # # Ensure "__nodes" key exists
+        # if "__nodes" not in self._memory:
+        #     self._memory["__nodes"] = []
+
+        # # Register node within __nodes if not already registered
+        # if self._node_id not in self._memory["__nodes"]:
+        #     logger.info(f"Registering node {self._node_id} on the memory.")
+        #     self._memory["__nodes"] += [
+        #         {
+        #             self._node_id: {
+        #                 "name": self.name,
+        #             }
+        #         }
+        #     ]
+        # else:
+        #     logger.error(f"Node {self._node_id} already registered on the memory.")
+
         # Ensure "__nodes" key exists
         if "__nodes" not in self._memory:
             self._memory["__nodes"] = {}
 
         # Register node within __nodes if not already registered
         if self._node_id not in self._memory["__nodes"]:
-            logger.debug(f"Registering node {self._node_id} on the memory.")
-            self._memory["__nodes"][self._node_id] = {
-                "name": self.name,
-            }
+            logger.info(f"Registering node {self._node_id} on the memory.")
+            self._memory["__nodes"] = self._memory["__nodes"].update(
+                {
+                    self._node_id: {
+                        "name": self.name,
+                    }
+                }
+            )
+            print(self._memory["__nodes"])
+            # print(self._memory["__nodes"][self._node_id])
+
         else:
             logger.error(f"Node {self._node_id} already registered on the memory.")
 
