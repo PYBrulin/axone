@@ -16,11 +16,7 @@ from typing import (
 )
 
 from .lock import lock
-from .serializers import (
-    NULL_BYTE,
-    JSONSerializer,
-    SharedMemoryDictSerializer,
-)
+from .serializers import NULL_BYTE, JSONSerializer, SharedMemoryDictSerializer
 
 NOT_GIVEN = object()
 DEFAULT_SERIALIZER = JSONSerializer()
@@ -40,7 +36,7 @@ class SharedMemoryDict:
         super().__init__()
         self._serializer = serializer
         self._memory_block = self._get_or_create_memory_block(
-            'sm_{name}'.format(name=name), size
+            "sm_{name}".format(name=name), size
         )
         self._ensure_memory_initialization()
 
@@ -87,46 +83,58 @@ class SharedMemoryDict:
         self._save_memory(db)
 
     def __getitem__(self, key: str) -> Any:
+        logging.debug(f"__getitem__ {key}")
         return self._read_memory()[key]
 
     def __setitem__(self, key: str, value: Any) -> None:
+        logging.debug(f"__setitem__ {key} {value}")
         with self._modify_db() as db:
             db[key] = value
 
     def __len__(self) -> int:
+        logging.debug(f"__len__")
         return len(self._read_memory())
 
     def __delitem__(self, key: str) -> None:
+        logging.debug(f"__delitem__ {key}")
         with self._modify_db() as db:
             del db[key]
 
     def __iter__(self) -> Iterator:
+        logging.debug(f"__iter__")
         return iter(self._read_memory())
 
     def __reversed__(self):
+        logging.debug(f"__reversed__")
         return reversed(self._read_memory())
 
     def __del__(self) -> None:
         self.cleanup()
 
     def __contains__(self, key: str) -> bool:
+        logging.debug(f"__contains__ {key}")
         return key in self._read_memory()
 
     def __eq__(self, other: Any) -> bool:
+        logging.debug(f"__eq__ {other}")
         return self._read_memory() == other
 
     def __ne__(self, other: Any) -> bool:
+        logging.debug(f"__ne__ {other}")
         return self._read_memory() != other
 
     if sys.version_info > (3, 8):
 
         def __or__(self, other: Any):
+            logging.debug(f"__or__ {other}")
             return self._read_memory() | other
 
         def __ror__(self, other: Any):
+            logging.debug(f"__ror__ {other}")
             return other | self._read_memory()
 
         def __ior__(self, other: Any):
+            logging.debug(f"__ior__ {other}")
             with self._modify_db() as db:
                 db |= other
                 return db
@@ -138,32 +146,40 @@ class SharedMemoryDict:
         return repr(self._read_memory())
 
     def get(self, key: str, default: Optional[Any] = None) -> Any:
+        logging.debug(f"get {key} {default}")
         return self._read_memory().get(key, default)
 
     def keys(self) -> KeysView[Any]:
+        logging.debug(f"keys")
         return self._read_memory().keys()
 
     def values(self) -> ValuesView[Any]:
+        logging.debug(f"values")
         return self._read_memory().values()
 
     def items(self) -> ItemsView:
+        logging.debug(f"items")
         return self._read_memory().items()
 
     def pop(self, key: str, default: Optional[Any] = NOT_GIVEN):
+        logging.debug(f"pop {key} {default}")
         with self._modify_db() as db:
             if default is NOT_GIVEN:
                 return db.pop(key)
             return db.pop(key, default)
 
     def update(self, other=(), /, **kwds):
+        logging.debug(f"update {other} {kwds}")
         with self._modify_db() as db:
             db.update(other, **kwds)
 
     def setdefault(self, key: str, default: Optional[Any] = None):
+        logging.debug(f"setdefault {key} {default}")
         with self._modify_db() as db:
             return db.setdefault(key, default)
 
     def _get_or_create_memory_block(self, name: str, size: int) -> SharedMemory:
+        """Get or create shared memory block"""
         try:
             self.check_security(name)
             return SharedMemory(name=name)
