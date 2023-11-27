@@ -9,43 +9,26 @@ os.system("cls||clear")  # Clear the terminal
 logging.basicConfig(level=logging.INFO)
 
 
-class ExampleNode:
+class ExampleNodePublisher:
+    """
+    Example Node to publish messages at different rates
+    Three publishers are registered:
+    - topic_published_once : publish a message once
+    - topic_published_rate : publish a message at a fixed rate
+    - topic_published_rate_func : publish a message at a fixed rate from a callback function
+    """
+
     def __init__(self) -> None:
-        # Class parameters
-        self.a = 1
-        self.b = 2
-        self.c = 3
-        self.parameters = {
-            "a": self.a,
-            "b": self.b,
-            "c": self.c,
-        }
-
-        # Class actions/callbacks
-        self.actions = {
-            "print": {
-                "message": str,
-            },
-        }
-
         # Register node
         self.node = Node(
-            name="example_pub",
+            name="example_publisher",
             memory_endpoint="ExampleNodeMemory",
-            memory_size=1024,
-            parameters=self.parameters,
-            actions=self.actions,
+            memory_size=4096,
         )
-
-    def print(self, message: str) -> None:
-        print(message)
-
-    def wait(self, duration: float) -> None:
-        time.sleep(duration)
 
     def publish_actualization(self) -> None:
         return {
-            "message": f"Hello from topic_published_rate_fc {time.time()}"
+            "message": f"Hello from topic_published_rate_func {time.time()}"
         }  # Return a dictionary
 
     def run(self) -> NoReturn:
@@ -59,7 +42,7 @@ class ExampleNode:
 
             # Register a rated publisher from a callback function
             self.node.register_publish(
-                "topic_published_rate_fc",
+                "topic_published_rate_func",
                 message=self.publish_actualization,
                 rate=2,
             )
@@ -69,10 +52,12 @@ class ExampleNode:
                 self.node.publish_once(
                     "topic_published_once",
                     {"message": f"Hello from topic_published_once {counter}"},
-                    rate=1,
                 )
                 logging.info(f"Published message to topic_published_once : {counter}")
                 counter += 1
+
+                print(f"Memory size : {self.node._memory.size}")
+
                 time.sleep(1)
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
@@ -84,5 +69,5 @@ class ExampleNode:
 
 
 if __name__ == "__main__":
-    node = ExampleNode()
+    node = ExampleNodePublisher()
     node.run()

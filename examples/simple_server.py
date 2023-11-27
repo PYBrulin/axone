@@ -9,33 +9,17 @@ from axone.node import Node
 logging.basicConfig(level=logging.INFO)
 
 
-class ExampleNode:
+class SimpleServerNode:
+    """Simple server example node to display the content of the shared memory"""
+
     def __init__(self) -> None:
-        # Class parameters
-        self.a = 1
-        self.b = 2
-        self.c = 3
-        self.parameters = {
-            "a": self.a,
-            "b": self.b,
-            "c": self.c,
-        }
-
-        # Class actions/callbacks
-        self.actions = {
-            "print": {
-                "message": str,
-            },
-        }
-
         # Register node
         self.node = Node(
             name="simple_server",
             memory_endpoint="ExampleNodeMemory",
-            memory_size=1024,
-            parameters=self.parameters,
-            actions=self.actions,
+            memory_size=4096,
         )
+        self.highest_rate = 1
 
     def print(self, message: str) -> None:
         print(message)
@@ -46,15 +30,36 @@ class ExampleNode:
     def run(self) -> NoReturn:
         try:
             while True:
-                os.system("cls||clear")  # Clear the terminal
+                # Clear the terminal before printing the memory content
+                os.system("cls||clear")
 
+                # Read the memory content
                 db = self.node._memory._read_memory()
+                print("Memory content :")
                 print(
-                    f"Memory content :\n{json.dumps(db,sort_keys=True,indent=4,separators=(',', ': '))}"
+                    json.dumps(
+                        db,
+                        sort_keys=True,
+                        indent=4,
+                        separators=(",", ": "),
+                    )
                 )
-                print(f"Memory size : {self.node._memory.size}")
 
-                time.sleep(0.1)
+                #! memory size is only updated when the memory is written
+                # print(f"Memory size : {self.node._memory.size}")
+
+                # Find the highest rated topic and try to match its frequency
+                # with the loop frequency
+                self.highest_rate = 1
+                for topic in db.keys():
+                    if isinstance(db[topic], dict):
+                        rate = db[topic].get("__rate", 0)
+                        if rate > self.highest_rate:
+                            self.highest_rate = rate
+
+                print(f"Highest rate : {self.highest_rate}")
+
+                time.sleep(1 / float(self.highest_rate))  # 10Hz
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
@@ -65,5 +70,5 @@ class ExampleNode:
 
 
 if __name__ == "__main__":
-    node = ExampleNode()
-    node.run()
+    ssn = SimpleServerNode()
+    ssn.run()
