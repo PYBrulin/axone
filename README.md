@@ -15,3 +15,117 @@ Axone can be installed locally using pip:
 ```bash
 pip install -e .
 ```
+
+or using the provided wheel in the release section:
+
+```bash
+pip install axone-0.1.0-py3-none-any.whl
+```
+
+## Usage
+
+### Publisher/Subscriber
+
+A publisher can be created using the `publish` or `publish_once` method of a node. The method takes the name of the topic to publish to, and the data to publish. It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a JSON-serializable object as the message.
+
+```python
+from axone.node import Node
+
+node = Node(
+    name="example_publisher",
+    memory_endpoint="ExampleNodeMemory",
+    memory_size=4096,
+)
+node.publish_once(
+    "topic_published_once",
+    message={"data": f"Hello from topic_published_once"},
+    rate=1,
+)
+```
+
+A subscriber can be created using the `subscribe` method of a node. The method takes the name of the topic to subscribe to, and a callable callback function that will be called when a message is received. The callback function must take a single argument, which will be the received message. Parsing of the message should be handled by the callback function.
+
+```python
+from axone.node import Node
+
+node = Node(
+    name="example_subscriber",
+    memory_endpoint="ExampleNodeMemory",
+    memory_size=4096,
+)
+
+def callback(message):
+    print(f"Raw object: {message}")
+    print(f"Data within: {message.get('data')}")
+
+node.register_subscribe("topic_published_once", callback=callback)
+```
+
+### Service/Client
+
+A list of actions or services can be registered by a node during initialization. The list of services is passed as a dictionary to the `actions` argument of the `Node` constructor. The dictionary must have the service name as the key or be passed a callable function directly. The value of each key must be a dictionary with the name of the arguments as the key and the type of the argument as the value. The callable function must take a single argument, which will be the request message.
+
+```python
+from axone.node import Node
+
+def display(message):
+    print(f"Message: {message.get('message')}")
+
+def move(message):
+    print(
+        f"Moving to: {message.get('x')}, {message.get('y')}, {message.get('z')}"
+    )
+
+node = Node(
+    name="example_performer",
+    memory_endpoint="ExampleNodeMemory",
+    memory_size=4096,
+    actions={
+        display: {
+            "message": "str",
+        },
+        move: {
+            "x": "float",
+            "y": "float",
+            "z": "float",
+        },
+    },
+)
+```
+
+A service can be called using the `call_action` method of a node. The method takes the name of the service to call, the name of the action to call, and the arguments to pass to the action directly as keyword arguments.
+
+```python
+from axone.node import Node
+
+node = Node(
+    name="example_actioneer",
+    memory_endpoint="ExampleNodeMemory",
+    memory_size=4096,
+)
+node.call_action(dest_node=target_node, action="move", x=1, y=2, z=3)
+```
+
+Note: No answer is returned by the service exchange. If an answer is required, an "answer service" should to implemented by the client and an answered called by the service provider.
+
+### Parameter server
+
+A parameter list can be exposed by a node during the node initialization. The list of parameters is passed as a dictionary to the `parameters` argument of the `Node` constructor. The dictionary must have the parameter name as the key and the value of the parameter as the value. The value of each key must be a JSON-serializable object.
+
+These parameters are read-only and cannot be modified by external node. If a behavior is expected to perform changes to the parameters, it should be implemented as a service.
+
+```python
+from axone.node import Node
+
+x = y = z = 0
+node = Node(
+    name="example_performer",
+    memory_endpoint="ExampleNodeMemory",
+    memory_size=4096,
+    parameters={
+        "x": x,
+        "y": y,
+        "z": z,
+    },
+)
+```
