@@ -1,6 +1,6 @@
 # AXONE
 
-Axone is a ROS-like framework for distributed computing implemented in pure-Python. It implement a shared memory model for communication between nodes on a single system. No outside communication is supported at this time.
+Axone is a ROS-like framework for distributed computing on a single system implemented in pure-Python. It is designed to be used in a multi-process environment by using a shared memory for communication between nodes. No outside communication is supported at this time.
 
 The package provide basic functionalities similar to ROS, such as:
 
@@ -23,6 +23,24 @@ pip install axone-0.1.0-py3-none-any.whl
 ```
 
 ## Usage
+
+### Shared memory
+
+Axone uses shared memory to communicate between nodes. A shared memory is created by the first node that uses it, and it is accessible by all nodes that use the same name.
+
+The shared memory is identified by a name, and the size of the shared memory must be specified when creating it. The size of the shared memory is commonly a power of 2.
+
+For more information on shared memory, see the [Python documentation](https://docs.python.org/3/library/multiprocessing.shared_memory.html).
+
+```python
+from axone.node import Node
+
+node = Node(
+    name="example_node", # Name of the node
+    memory_endpoint="ExampleNodeMemory", # Name of the shared memory
+    memory_size=4096, # Size of the shared memory
+)
+```
 
 ### Publisher/Subscriber
 
