@@ -40,22 +40,10 @@ class Node:
         self._executor = ThreadPoolExecutor(max_workers=10)
         # self._executor.submit(self._listen)
 
-        # Register the nodes parameters
         # Parameters are variables that can be used by the underlying program that runs the node
-
         # Ensure parameters are json serializable
         if self.parameters is not None:
             self.parameters = json.dumps(self.parameters)
-
-        # Register the nodes actions
-        # Actions arespecific calls that can be made to the underlying program that runs the node
-        # The actions are registered as a dictionary of key-value pairs
-        # The key is the name of the action
-        # The value is a dictionary of the arguments name and type of the action
-        # self.actions = actions
-        # # Ensure parameters are json serializable
-        # if self.actions is not None:
-        #     self.actions = json.dumps(self.actions)
 
         # Register node on the memory
         self._register_node()
@@ -258,15 +246,12 @@ class Node:
                     _actions[action.__name__] = self.actions[action]
                     self.register_action(action.__name__, action)
                 elif isinstance(action, str):
+                    # ? What is the point of this?
                     _actions[action] = self.actions[action]
                 else:
                     raise TypeError(
                         f"Action {action} is not a string or a function."
                     )
-
-            # Register the actions for the node
-            # for _action in _actions.keys():
-            #     self.register_action(_action, getattr(self, _action))
 
             # Inform the memory of the actions available for this node
             if database is None:
