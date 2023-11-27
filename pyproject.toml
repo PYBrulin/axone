@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axone"
+authors = [
+    {name = "Pierre-Yves BRULIN", email = "40915900+PYBrulin@users.noreply.github.com"},
+]
+description = "ROS-like framework for distributed computing implemented in Python"
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = ["one", "two"]
+license = {text = "BSD-3-Clause"}
+classifiers = [
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dynamic = ["version"]
+
+[tool.setuptools]
+py-modules = ["axone"]
+
+[tool.setuptools.dynamic]
+version = {attr = "axone.__version__"}
+
+[tool.isort]
+known_first_party = "axone"
+atomic = true
+line_length = 79
+multi_line_output = 3
+use_parentheses = true
+include_trailing_comma = true
+force_grid_wrap = 0
+
+[tool.black]
+skip-string-normalization = true
+line-length = 79

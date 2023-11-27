@@ -1,0 +1,58 @@
+name: Build
+
+on: 
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build wheels
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all tags and branches
+
+      # Note: This step will overwrite the current version.py contained in this repository to keep it up-to-date during the build
+      - name: Retrieve version from git tags
+        run: |
+          echo "TAG_NAME=$(git describe --match "v*" --tags)" >> $GITHUB_OUTPUT
+          sed -i "s/__version__ = .*/__version__ = '$(git describe --match "v*" --tags)'/g" axone/__init__.py
+
+      # Used to host cibuildwheel
+      - uses: actions/setup-python@v3
+
+      - name: Build wheels
+        run: python -m pip wheel -w dist .
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: axone_${{ steps.version.outputs.TAG_NAME }}
+          retention-days: 1
+          path: ./dist/*.whl
+
+      # Pre-release (anything that is not a tag)
+      - name: Upload Pre-Release Binary
+        uses: "marvinpinto/action-automatic-releases@latest"
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Latest Release"
+          files: ./dist/*.whl
+
+      # Release (tagged version starting with v*)
+      - name: Upload Release Binary
+        uses: "marvinpinto/action-automatic-releases@latest"
+        if: "startsWith(github.ref, 'refs/tags/v')"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          title: "Release ${{ steps.version.outputs.TAG_NAME }}"
+          files: ./dist/*.whl
