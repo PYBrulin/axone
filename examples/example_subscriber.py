@@ -9,32 +9,21 @@ os.system("cls||clear")  # Clear the terminal
 logging.basicConfig(level=logging.INFO)
 
 
-class ExampleNode:
+class ExampleNodeSubscriber:
+    """
+    Example Node to subscribe to messages incoming from other nodes
+    Three subscribers are registered to listen to the topics from the node "example_publisher":
+    - topic_published_once : subscribe to a topic published once
+    - topic_published_rate : subscribe to a topic published at a fixed rate
+    - topic_published_rate_func : subscribe to a topic published at a fixed rate from a callback function
+    """
+
     def __init__(self) -> None:
-        # Class parameters
-        self.a = 1
-        self.b = 2
-        self.c = 3
-        self.parameters = {
-            "a": self.a,
-            "b": self.b,
-            "c": self.c,
-        }
-
-        # Class actions/callbacks
-        self.actions = {
-            "print": {
-                "message": str,
-            },
-        }
-
         # Register node
         self.node = Node(
-            name="example_sub",
+            name="example_subscriber",
             memory_endpoint="ExampleNodeMemory",
-            memory_size=1024,
-            parameters=self.parameters,
-            actions=self.actions,
+            memory_size=4096,
         )
 
     def print(self, message: str) -> None:
@@ -47,7 +36,9 @@ class ExampleNode:
         try:
             self.node.register_subscribe("topic_published_once", callback=self.print)
             self.node.register_subscribe("topic_published_rate", callback=self.print)
-            self.node.register_subscribe("topic_published_rate_fc", callback=self.print)
+            self.node.register_subscribe(
+                "topic_published_rate_func", callback=self.print
+            )
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
@@ -60,5 +51,5 @@ class ExampleNode:
 
 
 if __name__ == "__main__":
-    node = ExampleNode()
+    node = ExampleNodeSubscriber()
     node.run()
