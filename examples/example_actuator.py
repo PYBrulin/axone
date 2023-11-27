@@ -1,6 +1,7 @@
 import logging
+import math
 import os
-import time, math
+import time
 from typing import NoReturn
 
 from axone.node import Node
@@ -57,16 +58,20 @@ class ExampleNodeActuator:
                         self.node.call_action(
                             dest_node=target_node,
                             action="move",
-                            x=round(math.sin(10 * time.time() * math.pi / 180), 4),
+                            x=round(
+                                math.sin(10 * time.time() * math.pi / 180), 4
+                            ),
                             y=round(
                                 math.sin(
-                                    10 * time.time() * math.pi / 180 + math.pi * 1 / 3
+                                    10 * time.time() * math.pi / 180
+                                    + math.pi * 1 / 3
                                 ),
                                 4,
                             ),
                             z=round(
                                 math.sin(
-                                    10 * time.time() * math.pi / 180 + math.pi * 2 / 3
+                                    10 * time.time() * math.pi / 180
+                                    + math.pi * 2 / 3
                                 ),
                                 4,
                             ),
