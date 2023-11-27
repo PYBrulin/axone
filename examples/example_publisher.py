@@ -53,7 +53,9 @@ class ExampleNodePublisher:
                     "topic_published_once",
                     {"message": f"Hello from topic_published_once {counter}"},
                 )
-                logging.info(f"Published message to topic_published_once : {counter}")
+                logging.info(
+                    f"Published message to topic_published_once : {counter}"
+                )
                 counter += 1
 
                 print(f"Memory size : {self.node._memory.size}")

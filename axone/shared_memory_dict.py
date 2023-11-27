@@ -47,7 +47,9 @@ class SharedMemoryDict:
         return self._size
 
     def _ensure_memory_initialization(self):
-        memory_is_empty = bytes(self._memory_block.buf).split(NULL_BYTE, 1)[0] == b""
+        memory_is_empty = (
+            bytes(self._memory_block.buf).split(NULL_BYTE, 1)[0] == b""
+        )
         if memory_is_empty:
             self._save_memory({})
 
@@ -184,7 +186,9 @@ class SharedMemoryDict:
         with self._modify_db() as db:
             return db.setdefault(key, default)
 
-    def _get_or_create_memory_block(self, name: str, size: int) -> SharedMemory:
+    def _get_or_create_memory_block(
+        self, name: str, size: int
+    ) -> SharedMemory:
         """Get or create shared memory block"""
         try:
             self.check_security(name)

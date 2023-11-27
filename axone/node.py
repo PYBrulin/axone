@@ -88,7 +88,9 @@ class Node:
                 "name": self.name,
             }
         else:
-            logger.error(f"Node {self.node_id} already registered on the memory.")
+            logger.error(
+                f"Node {self.node_id} already registered on the memory."
+            )
 
         # Register node parameters
         if self.parameters is not None:
@@ -139,7 +141,9 @@ class Node:
                 f"Topic {topic} is not available for node {self.node_id}:{self.name} to publish."
             )
 
-    def register_publish(self, topic: str, message: Any, rate: float = 0) -> None:
+    def register_publish(
+        self, topic: str, message: Any, rate: float = 0
+    ) -> None:
         """Publish a message on a topic."""
         logging.debug("Registering publisher", topic, message, rate)
         # Initialize a Thread to publish to the topic periodically
@@ -190,7 +194,9 @@ class Node:
                 # Sleep until the next message
                 if rate > 0 and _retry < MAX_RETRIES:
                     # Try to align the subscription with the publishing rate as much as possible
-                    time.sleep(max(0, 1 / float(rate) - time.time() + timestamp))
+                    time.sleep(
+                        max(0, 1 / float(rate) - time.time() + timestamp)
+                    )
                 else:
                     # If rate is not specified, then sleep for 1 second
                     time.sleep(1)
@@ -254,7 +260,9 @@ class Node:
                 elif isinstance(action, str):
                     _actions[action] = self.actions[action]
                 else:
-                    raise TypeError(f"Action {action} is not a string or a function.")
+                    raise TypeError(
+                        f"Action {action} is not a string or a function."
+                    )
 
             # Register the actions for the node
             # for _action in _actions.keys():
@@ -271,7 +279,9 @@ class Node:
 
     def register_action(self, action: str, callback: Callable) -> None:
         """Register an action."""
-        logger.info(f"Registering action {action} for node {self.node_id}:{self.name}.")
+        logger.info(
+            f"Registering action {action} for node {self.node_id}:{self.name}."
+        )
         # Initialize a Thread to listen to the action periodically
         self._executor.submit(self._listen_action, action, callback)
 
@@ -315,7 +325,12 @@ class Node:
         # Check if the action is available
         # We need to check if the node is available first, otherwise the action
         #  buffer will get congested with inexistent action calls
-        if db.get("__nodes", {}).get(dest_node, {}).get("actions", {}).get(action, {}):
+        if (
+            db.get("__nodes", {})
+            .get(dest_node, {})
+            .get("actions", {})
+            .get(action, {})
+        ):
             # Replace any previous call to the same action that has not been executed yet
             db["__actions"] = [
                 _action
