@@ -78,6 +78,10 @@ class ExampleNodeActuator:
                         )
                         print("Called action move")
 
+                        print(
+                            f"Parameters of {target_node}: {self.node.get_parameters(target_node)}"
+                        )
+
                     print(f"Memory size : {self.node._memory.size}")
 
                 time.sleep(1)
