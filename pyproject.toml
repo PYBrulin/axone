@@ -1,13 +1,9 @@
-[build-system]
-requires = ["setuptools", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "axone"
 authors = [
     {name = "Pierre-Yves BRULIN", email = "pierre-yves.brulin9@orange.fr"},
 ]
-description = "ROS-like framework for distributed computing implemented in Python"
+description = "ROS-like framework for distributed computing implemented in pure-Python"
 readme = "README.md"
 requires-python = ">=3.7"
 keywords = ["one", "two"]
@@ -18,11 +14,15 @@ classifiers = [
 ]
 dynamic = ["version"]
 
-[tool.setuptools]
-py-modules = ["axone"]
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
 
-[tool.setuptools.dynamic]
-version = {attr = "axone.__version__"}
+[tool.setuptools_scm]
+version_file = "axone/_version.py"
+
+[tool.setuptools]
+packages = ["axone"]
 
 [tool.isort]
 known_first_party = "axone"
