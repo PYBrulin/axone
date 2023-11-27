@@ -16,7 +16,12 @@ from typing import (
 )
 
 from .lock import lock
-from .serializers import NULL_BYTE, JSONSerializer, SharedMemoryDictSerializer
+from .serializers import (
+    NULL_BYTE,
+    DeserializationError,
+    JSONSerializer,
+    SharedMemoryDictSerializer,
+)
 
 NOT_GIVEN = object()
 DEFAULT_SERIALIZER = JSONSerializer()
@@ -225,7 +230,12 @@ class SharedMemoryDict:
             ) from exc
 
     def _read_memory(self) -> Dict[str, Any]:
-        return self._serializer.loads(self._memory_block.buf.tobytes())
+        try:
+            return self._serializer.loads(self._memory_block.buf.tobytes())
+        except DeserializationError:
+            # Reset memory
+            self._save_memory({})
+            return {}
 
     @property
     def shm(self) -> SharedMemory:

@@ -1,4 +1,3 @@
-import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -38,12 +37,10 @@ class Node:
 
         # Initialize a Thread to listen to the memory events
         self._executor = ThreadPoolExecutor(max_workers=10)
-        # self._executor.submit(self._listen)
+        self._executor.submit(self._listen)
 
-        # Parameters are variables that can be used by the underlying program that runs the node
-        # Ensure parameters are json serializable
-        if self.parameters is not None:
-            self.parameters = json.dumps(self.parameters)
+        self._cleaner_executor = ThreadPoolExecutor(max_workers=10)
+        self._cleaner_executor.submit(self._cleanup)
 
         # Register node on the memory
         self._register_node()
@@ -186,8 +183,8 @@ class Node:
                         max(0, 1 / float(rate) - time.time() + timestamp)
                     )
                 else:
-                    # If rate is not specified, then sleep for 1 second
-                    time.sleep(1)
+                    # If rate is not specified, then sleep for 0.1 second
+                    time.sleep(0.1)
 
             else:  # No topic with this name is available
                 pass
@@ -352,5 +349,92 @@ class Node:
         """List the actions available for a node."""
         nodes = self._memory.get("__nodes", default={})
         return nodes[node_id].get("actions", {})
+
+    # endregion
+
+    # region Parameters: Parameter Server functions
+    def update_parameters(self, parameters: Dict[str, Any]) -> None:
+        """Update node parameters."""
+        db = self._memory.get("__nodes", default={})
+
+        if self.node_id not in db:
+            # ! This case might happen if the server had to restart unexpectedly
+            return
+
+        db[self.node_id]["parameters"] = parameters
+        self._memory["__nodes"] = db
+
+    def get_parameters(self, node_id: str) -> Dict[str, Any]:
+        """Get node parameters."""
+        db = self._memory.get("__nodes", default={})
+        return db[node_id].get("parameters", {})
+
+    # endregion
+
+    # region Centralized cleanup functions
+    # As nodes act as a federated system, it is important to have a decentralized
+    #  cleanup mechanism accross all nodes to avoid memory leaks.
+    # The cleanup mechanism is based on the following assumptions:
+    # 1. All nodes are responsible for cleaning up the shared memory
+    # 2. Every node might get disconnected from the shared memory at any time
+    # 3. Rated topics should be used within their timespan to avoid memory leaks
+    # 4. Topics published only once should be used within a limited timespan to avoid memory leaks
+    # 5. Actions should be executed as soon as possible to avoid memory leaks
+    def _cleanup(self) -> None:
+        """
+        Cleanup the structure periodically.
+        All nodes should call this function periodically to clean up the memory.
+        """
+        while True:
+            logger.debug("Cleaning up memory.")
+
+            # Ensure this node is still registered
+            if self.node_id not in self._memory.get("__nodes", {}):
+                self._register_node()
+
+            # Cleanup unused topics
+            # TODO: This would require some sort of heartbeat mechanism
+            # self._cleanup_nodes()
+
+            # Cleanup unused topics
+            self._cleanup_topics()
+
+            # Cleanup unused actions
+            self._cleanup_actions()
+
+            # Sleep for a while before cleaning up again
+            time.sleep(DEFAULT_TIMEOUT)
+
+    def _cleanup_topics(self) -> None:
+        """Cleanup unused topics."""
+        # A topic is considered stale if it has not been updated for more than
+        # DEFAULT_TIMEOUT seconds or if the source node is not registered
+        db = dict(self._memory._read_memory().items())
+        for topic in db.keys():
+            if topic.startswith("__"):
+                # Skip internal data strtuctures
+                continue
+            if (
+                db[topic].get("__timestamp", 0)
+                + 1 / float(db[topic].get("__rate", 0))
+                + DEFAULT_TIMEOUT
+                < time.time()
+            ) or (db[topic].get("__source") not in db.get("__nodes", {})):
+                # Remove the topic
+                logger.debug(f"Removing topic {topic} from the memory.")
+                self._memory.pop(topic)
+
+    def _cleanup_actions(self) -> None:
+        """Cleanup unused actions."""
+        # An action is considered stale if it has not been executed for more than DEFAULT_TIMEOUT seconds
+        db = dict(self._memory._read_memory().items())
+        db["__actions"] = [
+            _action
+            for _action in db["__actions"]
+            if _action.get("__timestamp", 0) + DEFAULT_TIMEOUT > time.time()
+        ]
+
+        # Rewrite the actions buffer
+        self._memory["__actions"] = db["__actions"]
 
     # endregion

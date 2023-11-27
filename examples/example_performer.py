@@ -17,17 +17,14 @@ class ExampleNodePerformer:
 
     def __init__(self) -> None:
         # Class parameters
-        self.x = 1
-        self.y = 2
-        self.z = 3
         self.parameters = {
-            "x": self.x,
-            "y": self.y,
-            "z": self.z,
+            "x": 1,
+            "y": 2,
+            "z": 3,
         }
 
         # Class actions/callbacks
-        self.actions = {
+        actions = {
             self.print: {
                 "message": "str",
             },
@@ -36,7 +33,7 @@ class ExampleNodePerformer:
                 "y": "float",
                 "z": "float",
             },
-            # self.stop: {},
+            self.stop: {},
         }
 
         # Register node
@@ -45,7 +42,7 @@ class ExampleNodePerformer:
             memory_endpoint="ExampleNodeMemory",
             memory_size=4096,
             parameters=self.parameters,
-            actions=self.actions,
+            actions=actions,
         )
 
     # region action callbacks
@@ -58,10 +55,12 @@ class ExampleNodePerformer:
         y: float,
         z: float,
     ) -> None:
-        self.x = x
-        self.y = y
-        self.z = z
+        self.parameters["x"] = x
+        self.parameters["y"] = y
+        self.parameters["z"] = z
         print(f"Moving around {x}, {y}, {z}")
+        # ! Note it is not possible to call self.node.update_parameters here
+        # ! because the node is not thread safe
 
     def stop(self) -> None:
         print(f"Stopping")
@@ -73,7 +72,11 @@ class ExampleNodePerformer:
         # There is nothing to do here except wait for a call
         try:
             while True:
+                self.node.update_parameters(
+                    self.parameters
+                )  # Update the parameters displayed in the node info
                 time.sleep(1)
+
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
