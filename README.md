@@ -1,8 +1,8 @@
 # AXONE
 
-Axone is a ROS-like framework for distributed computing implemented in Python. It implement a shared memory model for communication between nodes on a single system. No outside communication is supported at this time.
+Axone is a ROS-like framework for distributed computing implemented in pure-Python. It implement a shared memory model for communication between nodes on a single system. No outside communication is supported at this time.
 
-The package provide basic functionnalities similar to ROS, such as:
+The package provide basic functionalities similar to ROS, such as:
 
 - Publisher/Subscriber: A node can publish data to a topic, and other nodes can subscribe to this topic to receive the data.
 - Service/Client: A node can provide a service, and other nodes can call this service.
