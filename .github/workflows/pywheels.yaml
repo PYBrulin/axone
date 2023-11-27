@@ -22,7 +22,6 @@ jobs:
       - name: Retrieve version from git tags
         run: |
           echo "TAG_NAME=$(git describe --match "v*" --tags)" >> $GITHUB_OUTPUT
-          sed -i "s/__version__ = .*/__version__ = '$(git describe --match "v*" --tags)'/g" axone/__init__.py
 
       # Used to host cibuildwheel
       - uses: actions/setup-python@v3
@@ -33,7 +32,6 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: axone_${{ steps.version.outputs.TAG_NAME }}
           retention-days: 1
           path: ./dist/*.whl
 
