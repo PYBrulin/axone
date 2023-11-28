@@ -48,11 +48,11 @@ class Node:
                     f"Config file {self.config_file} does not exist."
                 )
 
-        self.name = kwargs.get("name", "")
-        self.memory_endpoint = kwargs.get("memory_endpoint", "")
-        self.memory_size = kwargs.get("memory_size", None)
-        self.parameters = kwargs.get("parameters", None)
-        self.actions = kwargs.get("actions", None)
+        self._name = kwargs.get("name", "")
+        self._memory_endpoint = kwargs.get("memory_endpoint", "")
+        self._memory_size = kwargs.get("memory_size", None)
+        self._parameters = kwargs.get("parameters", None)
+        self._actions = kwargs.get("actions", None)
         self._action_server_rate = 1 / float(
             kwargs.get("action_server_rate", 10)
         )
@@ -64,6 +64,7 @@ class Node:
             raise ValueError("Memory endpoint cannot be empty.")
 
         # Store the kwargs for later use
+        # In case of a restart, the node will be reinitialized with the same kwargs
         self.kwargs = kwargs
 
         # Initialize the shared memory
@@ -89,6 +90,61 @@ class Node:
     def node_id(self) -> str:
         """Return the node id."""
         return self._node_id
+
+    @property
+    def name(self) -> str:
+        """Return the node name."""
+        return self._name
+
+    @name.setter
+    def name(self, name: str) -> None:
+        """Set the node name."""
+        self._name = name
+        self.kwargs["name"] = name
+
+    @property
+    def memory_endpoint(self) -> str:
+        """Return the memory endpoint."""
+        return self._memory_endpoint
+
+    @memory_endpoint.setter
+    def memory_endpoint(self, memory_endpoint: str) -> None:
+        """Set the memory endpoint."""
+        self._memory_endpoint = memory_endpoint
+        self.kwargs["memory_endpoint"] = memory_endpoint
+
+    @property
+    def memory_size(self) -> Optional[int]:
+        """Return the memory size."""
+        return self._memory_size
+
+    @memory_size.setter
+    def memory_size(self, memory_size: Optional[int]) -> None:
+        """Set the memory size."""
+        self._memory_size = memory_size
+        self.kwargs["memory_size"] = memory_size
+
+    @property
+    def parameters(self) -> Optional[Dict[str, Any]]:
+        """Return the node parameters."""
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, parameters: Optional[Dict[str, Any]]) -> None:
+        """Set the node parameters."""
+        self._parameters = parameters
+        self.kwargs["parameters"] = parameters
+
+    @property
+    def actions(self) -> Optional[Dict[str, Any]]:
+        """Return the node actions."""
+        return self._actions
+
+    @actions.setter
+    def actions(self, actions: Optional[Dict[str, Any]]) -> None:
+        """Set the node actions."""
+        self._actions = actions
+        self.kwargs["actions"] = actions
 
     @property
     def action_server_rate(self) -> float:
@@ -126,6 +182,17 @@ class Node:
 
         # Write back to memory
         self._memory["__nodes"] = db
+
+    def restart(self) -> None:
+        """Restart the node."""
+        logger.info(f"Restarting node {self.node_id}:{self.name}.")
+
+        # Restart the node
+        self._memory.shm.close()
+        self._memory.shm.unlink()  # Call unlink only once to release the shared memory
+
+        # Reinitialize the node
+        self.__init__(**self.kwargs)  # ?
 
     # region Publisher functions
     def publish_once(
