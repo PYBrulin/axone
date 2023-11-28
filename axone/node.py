@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -11,34 +13,72 @@ MAX_RETRIES = 10
 
 
 class Node:
-    def __init__(
-        self,
-        name: str = None,
-        memory_endpoint: str = "",
-        memory_size: Optional[int] = None,
-        parameters: Optional[Dict[str, Any]] = None,
-        actions: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> None:
-        self.name = name
-        self.memory_endpoint = memory_endpoint
-        self.memory_size = memory_size
-        self.parameters = parameters
-        self.actions = actions
+    def __init__(self, **kwargs) -> None:
+        """Initialize a node for the Axone framework.
 
+        Args:
+            name (str, optional): The name of the node. Defaults to "".
+            memory_endpoint (str, optional): The name of the shared memory. Defaults to "".
+            memory_size (Optional[int], optional): The size of the shared memory. Defaults to None.
+            parameters (Optional[Dict[str, Any]], optional): The parameters of the node. Defaults to None.
+            actions (Optional[Dict[str, Any]], optional): The actions of the node. Defaults to None.
+            config_file (Optional[str], optional): The path to a config file which Can be used to load a common set of
+                parameters for all nodes on the same system from a json file. Defaults to None.
+            action_server_rate (float, optional): The rate at which the action server is checked for new actions.
+                Defaults to 10Hz.
+
+        Raises:
+            ValueError: Whether a required parameter is missing.
+            FileNotFoundError: if the config file is specified but does not exist.
+        """
+        self.config_file = kwargs.get("config_file", None)
+        if self.config_file is not None:
+            # Load the config file
+            if os.path.exists(self.config_file):
+                with open(self.config_file, "r") as f:
+                    try:
+                        # Merge the config file with the kwargs
+                        kwargs = {**kwargs, **json.load(f)}
+                    except Exception as e:
+                        raise ValueError(
+                            f"Config file {self.config_file} is not a valid json file."
+                        )
+            else:
+                raise FileNotFoundError(
+                    f"Config file {self.config_file} does not exist."
+                )
+
+        self.name = kwargs.get("name", "")
+        self.memory_endpoint = kwargs.get("memory_endpoint", "")
+        self.memory_size = kwargs.get("memory_size", None)
+        self.parameters = kwargs.get("parameters", None)
+        self.actions = kwargs.get("actions", None)
+        self._action_server_rate = 1 / float(
+            kwargs.get("action_server_rate", 10)
+        )
+
+        # Check for required parameters
+        if self.name == "":
+            raise ValueError("Node name cannot be empty.")
+        if self.memory_endpoint == "":
+            raise ValueError("Memory endpoint cannot be empty.")
+
+        # Store the kwargs for later use
         self.kwargs = kwargs
 
+        # Initialize the shared memory
         self._memory = SharedMemoryDict(
             name=self.memory_endpoint, size=self.memory_size
         )
-        self._node_id = self._get_node_id()
 
-        self._action_server_rate = kwargs.get("action_server_rate", 0.1)
+        # Generate a unique node id
+        self._node_id = self._get_node_id()
 
         # Initialize a Thread to listen to the memory events
         self._executor = ThreadPoolExecutor(max_workers=10)
         self._executor.submit(self._listen)
 
+        # Initialize a Thread to cleanup the memory periodically
         self._cleaner_executor = ThreadPoolExecutor(max_workers=10)
         self._cleaner_executor.submit(self._cleanup)
 
