@@ -105,7 +105,7 @@ class SharedMemoryDict:
     def __iter__(self) -> Iterator:
         return iter(self._read_memory())
 
-    def __reversed__(self) -> reversed[str]:
+    def __reversed__(self):
         return reversed(self._read_memory())
 
     def __del__(self) -> None:

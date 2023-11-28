@@ -1,0 +1,4 @@
+{
+    "memory_endpoint": "ExampleNodeMemory",
+    "memory_size": 8192
+}
