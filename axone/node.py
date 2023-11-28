@@ -75,6 +75,8 @@ class Node:
         # Generate a unique node id
         self._node_id = self._get_node_id()
 
+        self._actions_map = {}
+
         # Initialize a Thread to listen to the memory events
         self._executor = ThreadPoolExecutor(max_workers=10)
         self._executor.submit(self._listen)
@@ -343,14 +345,18 @@ class Node:
             self._memory["__actions"] = []
 
         if self.actions is not None:
+            self._executor.submit(self._listen_action)
+
             # format the actions dictionary
+            self._actions_map = {}
             _actions = {}
             for action in self.actions.keys():
                 if callable(action):
+                    self._actions_map[action.__name__] = action
                     _actions[action.__name__] = self.actions[action]
-                    self.register_action(action.__name__, action)
                 elif isinstance(action, str):
                     # ? What is the point of this?
+                    self._actions_map[action] = self.actions[action]
                     _actions[action] = self.actions[action]
                 else:
                     raise TypeError(
@@ -366,59 +372,110 @@ class Node:
             if database is None:
                 self._memory["__nodes"] = db
 
-    def register_action(self, action: str, callback: Callable) -> None:
-        """Register an action."""
-        logger.info(
-            f"Registering action {action} for node {self.node_id}:{self.name}."
-        )
-        # Initialize a Thread to listen to the action periodically
-        self._executor.submit(self._listen_action, action, callback)
-
-    def _listen_action(self, action: str, callback: Callable) -> None:
+    def _listen_action(
+        self,
+    ) -> None:
         """Listen to actions."""
-        while True:
-            # Get the action buffer
-            action_buffer = self._memory.get("__actions", default=[])
+        # Listening and processing actions might take some time
+        # Therefore, to not block the memory, we first need to fetch and remove
+        # all actions directed to this node from the memory, all in a single
+        # operation. Then, we can process the actions
 
-            logger.debug(f"Action buffer: {action}")
+        while True:
+            action_buffer = []
+
+            if not "__actions" in self._memory:
+                continue
+
+            # TODO: Find a way to do this in a single operation (Some sort of atomic operation)
+            # It currently fetch the same actions multiple times
+            # Alternatives! ===================================================
+            action_buffer = []
+            remaining_actions = []
+            for action in self._memory.get('__actions', default=[]):
+                # Note: two operations means that other node can acquire the lock in between
+                if action["__dst"] == self.node_id:
+                    action_buffer.append(action)
+                else:
+                    remaining_actions.append(action)
+            self._memory['__actions'] = remaining_actions
+            # Alternatives! ===================================================
+            # action_buffer = list(
+            #     filter(
+            #         lambda x: x["__dst"] == self.node_id,
+            #         self._memory.get('__actions', default=[]),
+            #     )
+            # )
+            # self._memory['__actions'] = list(
+            #     filter(
+            #         lambda x: x["__dst"] != self.node_id,
+            #         self._memory.get('__actions', default=[]),
+            #     )
+            # )
+            # =================================================================
+            # actions = self._memory.get('__actions', default=[])
+            # action_buffer, self._memory['__actions'] = [
+            #     x for x in actions if x["__dst"] == self.node_id
+            # ], [x for x in actions if x["__dst"] != self.node_id]
+            # =================================================================
+
+            if action_buffer:
+                logger.debug(
+                    f"Processing {len(action_buffer)} actions for node {self.node_id}:{self.name}:\n\t"
+                    + "\n\t".join([str(_) for _ in action_buffer])
+                )
+
+            logger.debug(f"Action buffer: {action_buffer}")
             for action in action_buffer:
-                # Check if the action is for this node
-                if (
-                    action.get("__dst") == self.node_id
-                    and callback.__name__ in action.keys()
-                ):
+                # Find the appropriate callback for the action
+                # Get the first key in action that does not start with "__"
+                callback = self._actions_map.get(
+                    next(
+                        filter(lambda x: not x.startswith("__"), action.keys())
+                    ),
+                    None,
+                )
+
+                if callback is None:
+                    # Action is not available
+                    continue
+                else:
                     logger.debug(
-                        f"Executing action {action} for node {self.node_id}:{self.name}."
+                        f"Executing action {action} for node {self.node_id}:{self.name} with callback {callback.__name__}."
                     )
 
                     # Execute the action
-                    callback(**action[callback.__name__])
+                    response = callback(**action[callback.__name__])
 
-                    # Remove the action from the buffer
-                    action_buffer.remove(action)
+                    # If the action has a response, then send the response back to the source node
+                    if (
+                        response is not None
+                        and action.get("__ans", None) is not None
+                    ):
+                        self.call_action(
+                            dest_node=action.get("__src"),
+                            action=action.get("__ans"),
+                            **response,
+                        )
 
-            # Write back to memory without the executed actions
-            self._memory["__actions"] = action_buffer
-
+            # Sleep for a while before checking for new actions
             time.sleep(self.action_server_rate)
 
     def call_action(
         self,
         dest_node: str,
         action: str,
+        answer: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Call an action on a node."""
-        db = self._memory._read_memory()
+        db = dict(self._memory)
 
         # Check if the action is available
         # We need to check if the node is available first, otherwise the action
         #  buffer will get congested with inexistent action calls
-        if (
-            db.get("__nodes", {})
-            .get(dest_node, {})
-            .get("actions", {})
-            .get(action, {})
+        if action in db.get("__nodes", {}).get(dest_node, {}).get(
+            "actions", {}
         ):
             # Replace any previous call to the same action that has not been executed yet
             db["__actions"] = [
@@ -437,14 +494,32 @@ class Node:
                 "__src": self.node_id,
                 "__timestamp": time.time(),
             }
-            db["__actions"] += [{action: kwargs} | properties]
+            # Add the name of the answer action if any
+            if answer is not None:
+                if callable(answer):
+                    properties["__ans"] = answer.__name__
+                elif isinstance(answer, str):
+                    properties["__ans"] = answer
+                else:
+                    logger.error(
+                        f"Answer action {answer} is not a string or a function. Answer action will be ignored."
+                    )
+
+            # db["__actions"] += [{action: kwargs} | properties]
+
+            # # Write back to memory
+            # self._memory["__actions"] = db["__actions"]
 
             # Write back to memory
-            self._memory["__actions"] = db["__actions"]
+            self._memory["__actions"] += [{action: kwargs} | properties]
+
+            logger.debug(
+                f"Called action {action} on node {dest_node}.",
+            )
         else:
             # Action is not available
             logger.error(
-                f"Action {action} is not available for node {self.node_id}:{self.name} to call."
+                f"Action {action} cannot be called on node {dest_node} because it is not available."
             )
 
     def find_node_by_name(self, name: str) -> List[str]:
@@ -474,7 +549,7 @@ class Node:
     def get_parameters(self, node_id: str) -> Dict[str, Any]:
         """Get node parameters."""
         db = self._memory.get("__nodes", default={})
-        return db[node_id].get("parameters", {})
+        return db.get(node_id, {}).get("parameters", {})
 
     # endregion
 
@@ -497,6 +572,9 @@ class Node:
 
             # Ensure this node is still registered
             if self.node_id not in self._memory.get("__nodes", {}):
+                logging.critical(
+                    f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
+                )
                 self._register_node()
 
             # Cleanup unused topics
@@ -516,7 +594,7 @@ class Node:
         """Cleanup unused topics."""
         # A topic is considered stale if it has not been updated for more than
         # DEFAULT_TIMEOUT seconds or if the source node is not registered
-        db = dict(self._memory._read_memory().items())
+        db = self._memory.items()
         for topic in db.keys():
             if topic.startswith("__"):
                 # Skip internal data strtuctures
@@ -534,7 +612,7 @@ class Node:
     def _cleanup_actions(self) -> None:
         """Cleanup unused actions."""
         # An action is considered stale if it has not been executed for more than DEFAULT_TIMEOUT seconds
-        db = dict(self._memory._read_memory().items())
+        db = self._memory.items()
         db["__actions"] = [
             _action
             for _action in db["__actions"]

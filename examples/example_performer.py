@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import NoReturn
+from typing import Dict, NoReturn
 
 from axone.node import Node
 
@@ -54,13 +54,20 @@ class ExampleNodePerformer:
         x: float,
         y: float,
         z: float,
-    ) -> None:
+    ) -> Dict[str, float]:
         self.parameters["x"] = x
         self.parameters["y"] = y
         self.parameters["z"] = z
         print(f"Moving around {x}, {y}, {z}")
         # ! Note it is not possible to call self.node.update_parameters here
         # ! because the node is not thread safe
+
+        # Send an answer to the caller
+        return {
+            "xy": x * y,
+            "yz": y * z,
+            "zx": z * x,
+        }
 
     def stop(self) -> None:
         print(f"Stopping")
