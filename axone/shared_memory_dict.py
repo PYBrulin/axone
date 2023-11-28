@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-import warnings
 from contextlib import contextmanager
 from multiprocessing.shared_memory import SharedMemory
 from typing import (
@@ -62,16 +61,6 @@ class SharedMemoryDict:
         if not hasattr(self, "_memory_block"):
             return
         self._memory_block.close()
-
-    def move_to_end(self, key: str, last: Optional[bool] = True) -> None:
-        warnings.warn(
-            "The 'move_to_end' method will be removed in future versions. "
-            "Use pop and reassignment instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        with self._modify_db() as db:
-            db[key] = db.pop(key)
 
     @lock
     def clear(self) -> None:

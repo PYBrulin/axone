@@ -14,9 +14,18 @@ class CmdLine:
         self._highest_rate = 1
 
         self._available_commands = {
-            "help": {"_cb": self.help, "_help": "Display this help message"},
-            "clear": {"_cb": self.clear, "_help": "Clear the terminal"},
-            "quit": {"_cb": self.quit, "_help": "Exit the program"},
+            "help": {
+                "_cb": self.help,
+                "_help": "Display this help message",
+            },
+            "clear": {
+                "_cb": self.clear,
+                "_help": "Clear the terminal",
+            },
+            "quit": {
+                "_cb": self.quit,
+                "_help": "Exit the program",
+            },
             "config": {
                 "show": {
                     "_cb": self.config_show,
@@ -36,8 +45,14 @@ class CmdLine:
                 "_cb": self.watch,
                 "_help": "watch the memory content in real-time",
             },
-            "rate": {"_cb": self.rate, "_help": "Display the highest rate"},
-            "restart": {"_cb": self.restart, "_help": "Restart the node"},
+            "rate": {
+                "_cb": self.rate,
+                "_help": "Display the highest rate",
+            },
+            "restart": {
+                "_cb": self.restart,
+                "_help": "Restart the node",
+            },
             "node": {
                 "info": {
                     "_cb": self.node_info,
@@ -124,7 +139,7 @@ class CmdLine:
         exit(0)
 
     def memory(self, *args) -> None:
-        self.db = self.node._memory._read_memory()
+        self.db = dict(self.node._memory)
         print(
             json.dumps(
                 self.db,
@@ -214,7 +229,7 @@ class CmdLine:
     def topic_list(self, *args) -> None:
         """Display the list of topics"""
         # Topics are all the keys in the memory except the ones starting with "__"
-        self.db = self.node._memory._read_memory()
+        self.db = dict(self.node._memory)
         topics = [
             topic
             for topic in self.db.keys()
@@ -332,7 +347,7 @@ class CmdLine:
                     print("\033[J", end="")
                     # I love ANSI escape codes :)
 
-                self.db = self.node._memory._read_memory()
+                self.db = dict(self.node._memory)
                 if self.db:
                     content = json.dumps(
                         self.db,
@@ -363,7 +378,7 @@ class CmdLine:
         try:
             while True:
                 # Read the memory content
-                self.db = self.node._memory._read_memory()
+                self.db = dict(self.node._memory)
 
                 self._highest_rate = 1
                 for topic in self.db.keys():

@@ -115,6 +115,7 @@ classDiagram
 
     example_actuator ..|> example_performer : display(message="Hello")
     example_actuator ..|> example_performer : move(x=1,y=2,z=3)
+    example_performer ..|> example_actuator : move_response(xy=x+y,yz=y+z,zx=z+X)
 ```
 
 A list of actions or services can be registered by a node during initialization. The list of services is passed as a dictionary to the `actions` argument of the `Node` constructor. The dictionary must have the service name as the key or be passed a callable function directly. The value of each key must be a dictionary with the name of the arguments as the key and the type of the argument as the value. The callable function must take a single argument, which will be the request message.
@@ -160,7 +161,9 @@ node = Node(
 node.call_action(dest_node=target_node, action="move", x=1, y=2, z=3)
 ```
 
-Note: No answer is returned by the service exchange. If an answer is required, an "answer service" should to implemented by the client and an answered called by the service provider.
+An answer can be returned by a service, but is not required. The answer must be a JSON-serializable object.
+If an answer is expected, the argument `answer` can be passed to the `call_action` method.
+The `answer` argument accept either a string matching the action name, or directly the callable function to call. The callable function must already be registered as an action on the client node and must take the same arguments as the response message will have. On the service side, the answer will be returned on the service named after `answer`. If no `answer` argument is passed, but the service still returns an answer, the answer will be ignored. For an example of this, see the `example_actuator` and `example_performer` nodes in the `examples` folder which implement a simple request/response service over the request `move` and the response `move_response`.
 
 ### Parameter server
 

@@ -28,7 +28,7 @@ class SimpleServerNode:
                 os.system("cls||clear")
 
                 # Read the memory content
-                db = self.node._memory._read_memory()
+                db = dict(self.node._memory)
                 print("Memory content :")
                 print(
                     json.dumps(
