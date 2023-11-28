@@ -9,9 +9,7 @@ from axone.node import Node
 class CmdLine:
     def __init__(self, **kwargs) -> None:
         self.node = Node(
-            name=kwargs.get('name', 'cmd_line_server'),
-            memory_endpoint=kwargs.get('memory_endpoint', 'ExampleNodeMemory'),
-            memory_size=kwargs.get('memory_size', 4096),
+            **kwargs,
         )
         self._highest_rate = 1
 
@@ -19,12 +17,6 @@ class CmdLine:
             "help": {"_cb": self.help, "_help": "Display this help message"},
             "clear": {"_cb": self.clear, "_help": "Clear the terminal"},
             "quit": {"_cb": self.quit, "_help": "Exit the program"},
-            "memory": {
-                "_cb": self.memory,
-                "_help": "Display the memory content",
-            },
-            "rate": {"_cb": self.rate, "_help": "Display the highest rate"},
-            "restart": {"_cb": self.restart, "_help": "Restart the node"},
             "config": {
                 "show": {
                     "_cb": self.config_show,
@@ -36,6 +28,16 @@ class CmdLine:
                 },
                 "_help": "Node configuration management",
             },
+            "memory": {
+                "_cb": self.memory,
+                "_help": "Display the memory content",
+            },
+            "watch": {
+                "_cb": self.watch,
+                "_help": "watch the memory content in real-time",
+            },
+            "rate": {"_cb": self.rate, "_help": "Display the highest rate"},
+            "restart": {"_cb": self.restart, "_help": "Restart the node"},
             "node": {
                 "info": {
                     "_cb": self.node_info,
@@ -256,13 +258,13 @@ class CmdLine:
 
     def topic_echo(self, *args) -> None:
         """Subscribe to a topic and display its content in real time"""
-        topic_name = args[0]
+        topic_name = args[0][0]
 
         if len(args) == 0:
             print("Missing topic name")
             return
 
-        if topic_name not in self.node._memory._read_memory():
+        if not self.node._memory.get(topic_name, {}):
             print(f"Unknown topic '{topic_name}'")
             return
 
@@ -270,6 +272,7 @@ class CmdLine:
             # Implement a simple subscription to a topic
             # It does not rely on the node's subscription mechanism
             content = ""
+            print("Press Ctrl+C to exit")
             while True:
                 size = len(content.splitlines())
                 if size > 0:
@@ -308,10 +311,53 @@ class CmdLine:
                     print(f"Topic '{topic_name}' has been deleted")
                     break
         except KeyboardInterrupt:
-            print("KeyboardInterrupt")
+            print("Interrupted")
             return
 
     # endregion
+
+    def watch(self, *args) -> None:
+        """Watch the memory content in real-time"""
+        print("Press Ctrl+C to exit")
+        try:
+            # Implement a simple subscription to a topic
+            # It does not rely on the node's subscription mechanism
+            content = ""
+            while True:
+                size = len(content.splitlines())
+                if size > 0:
+                    # Move the cursor to the beginning of the content
+                    print(f"\033[{size}A", end="")
+                    # Clear the remaining lines
+                    print("\033[J", end="")
+                    # I love ANSI escape codes :)
+
+                self.db = self.node._memory._read_memory()
+                if self.db:
+                    content = json.dumps(
+                        self.db,
+                        sort_keys=True,
+                        indent=4,
+                    )
+                    print(content)
+
+                    self._highest_rate = 1
+                    for topic in self.db.keys():
+                        if isinstance(self.db[topic], dict):
+                            rate = self.db[topic].get("__rate", 0)
+                            if rate > self._highest_rate:
+                                self._highest_rate = rate
+
+                    # Sleep until the next message
+                    time.sleep(min(1, 1 / float(self._highest_rate)))
+                else:
+                    break
+        except KeyboardInterrupt:
+            print("Interrupted")
+            return
+        except Exception as e:
+            print(e)
+            return
 
     def main(self) -> None:
         try:
@@ -330,7 +376,7 @@ class CmdLine:
                 command = input(f"(axone:{self.node.name})> ")
 
                 # Parse command
-                command = command.split(" ")
+                command = command.rstrip().split(" ")
                 if len(command) == 0:
                     continue
 
@@ -345,17 +391,18 @@ class CmdLine:
                             self._available_commands[command[0]][command[1]][
                                 "_cb"
                             ](command[2:])
+                        else:
+                            print(
+                                f"Unknown subcommand '{command[1]}' for command '{command[0]}'"
+                            )
                     else:
-                        print(
-                            f"Unknown subcommand '{command[1]}' for command '{command[0]}'"
-                        )
-                    # else:
-                    #     print(f"Too many arguments for command '{command[0]}'")
+                        # Provide help for the specified command
+                        self.help([command[0]])
                 else:
                     print(f"Unknown command '{command[0]}'")
 
         except KeyboardInterrupt:
-            print("KeyboardInterrupt")
+            print("Exiting...")
             exit(0)
         finally:
             self.node._memory.shm.close()
@@ -364,18 +411,37 @@ class CmdLine:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--name', type=str, default='cmd_line_server', help='node name'
+    parser = argparse.ArgumentParser(
+        prog='axone',
+        description='Axone command line interface',
     )
     parser.add_argument(
+        '-n',
+        '--name',
+        type=str,
+        default='cmd_line_server',
+        help='node name',
+    )
+    parser.add_argument(
+        '-e',
         '--memory_endpoint',
         type=str,
         default='ExampleNodeMemory',
         help='memory endpoint name',
     )
     parser.add_argument(
-        '--memory_size', type=int, default=4096, help='memory size'
+        '-s',
+        '--memory_size',
+        type=int,
+        default=4096,
+        help='memory size',
+    )
+    parser.add_argument(
+        '-f',
+        '--config_file',
+        type=str,
+        default=None,
+        help='configuration file',
     )
     args = parser.parse_args()
     kwargs = vars(args)
