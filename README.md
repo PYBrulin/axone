@@ -1,5 +1,7 @@
 # AXONE
 
+[![Build](https://github.com/PYBrulin/axone/actions/workflows/pywheels.yaml/badge.svg)](https://github.com/PYBrulin/axone/actions/workflows/pywheels.yaml)
+
 Axone is a ROS-like framework for distributed computing on a single system implemented in pure-Python. It is designed to be used in a multi-process environment by using a shared memory for communication between nodes. No outside communication is supported at this time.
 
 The package provide basic functionalities similar to ROS, such as:
@@ -42,7 +44,26 @@ node = Node(
 )
 ```
 
+```mermaid
+classDiagram
+    class Node{
+        +name
+        +parameters
+        +actions()
+    }
+```
+
 ### Publisher/Subscriber
+
+```mermaid
+classDiagram
+    class example_publisher
+    class example_subscriber
+
+    example_publisher --> example_subscriber : topic_published_once
+    example_publisher --> example_subscriber : topic_published_rate
+    example_publisher --> example_subscriber : topic_published_rate_func
+```
 
 A publisher can be created using the `publish` or `publish_once` method of a node. The method takes the name of the topic to publish to, and the data to publish. It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a JSON-serializable object as the message.
 
@@ -81,6 +102,21 @@ node.register_subscribe("topic_published_once", callback=callback)
 
 ### Service/Client
 
+```mermaid
+---
+title: Service/Client
+---
+classDiagram
+    class example_actuator
+    class example_performer{
+        +display(message)
+        +move(x, y, z)
+    }
+
+    example_actuator ..|> example_performer : display(message="Hello")
+    example_actuator ..|> example_performer : move(x=1,y=2,z=3)
+```
+
 A list of actions or services can be registered by a node during initialization. The list of services is passed as a dictionary to the `actions` argument of the `Node` constructor. The dictionary must have the service name as the key or be passed a callable function directly. The value of each key must be a dictionary with the name of the arguments as the key and the type of the argument as the value. The callable function must take a single argument, which will be the request message.
 
 ```python
@@ -117,7 +153,7 @@ A service can be called using the `call_action` method of a node. The method tak
 from axone.node import Node
 
 node = Node(
-    name="example_actioneer",
+    name="example_actuator",
     memory_endpoint="ExampleNodeMemory",
     memory_size=4096,
 )
@@ -127,6 +163,15 @@ node.call_action(dest_node=target_node, action="move", x=1, y=2, z=3)
 Note: No answer is returned by the service exchange. If an answer is required, an "answer service" should to implemented by the client and an answered called by the service provider.
 
 ### Parameter server
+
+```mermaid
+classDiagram
+    class Node{
+        +x
+        +y
+        +z
+    }
+```
 
 A parameter list can be exposed by a node during the node initialization. The list of parameters is passed as a dictionary to the `parameters` argument of the `Node` constructor. The dictionary must have the parameter name as the key and the value of the parameter as the value. The value of each key must be a JSON-serializable object.
 
@@ -146,4 +191,29 @@ node = Node(
         "z": z,
     },
 )
+```
+
+### Examples
+
+The `examples` folder contains a few examples of nodes that can be run using the `axone` command.
+When running all `example_*.py` files, the following communication graph is created:
+
+```mermaid
+classDiagram
+    class example_publisher
+    class example_subscriber
+    class example_actuator
+    class example_performer{
+        +x
+        +y
+        +z
+        +print(message)
+        +move(x, y, z)
+        +stop()
+    }
+
+    example_publisher --> example_subscriber : topic_published_once
+    example_publisher --> example_subscriber : topic_published_rate
+    example_actuator ..|> example_performer : print(message="Hello")
+    example_actuator ..|> example_performer : move(x=1,y=2,z=3)
 ```

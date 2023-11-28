@@ -19,7 +19,7 @@ class ExampleNodeActuator:
     def __init__(self) -> None:
         # Register node
         self.node = Node(
-            name="example_actioneer",
+            name="example_actuator",
             memory_endpoint="ExampleNodeMemory",
             memory_size=4096,
         )
@@ -50,7 +50,7 @@ class ExampleNodeActuator:
                         self.node.call_action(
                             dest_node=target_node,
                             action="print",
-                            message="Hello from example_actioneer",
+                            message="Hello from example_actuator",
                         )
                         print("Called action print")
                         time.sleep(1)
