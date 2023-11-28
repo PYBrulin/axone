@@ -21,12 +21,6 @@ class SimpleServerNode:
         )
         self.highest_rate = 1
 
-    def print(self, message: str) -> None:
-        print(message)
-
-    def wait(self, duration: float) -> None:
-        time.sleep(duration)
-
     def run(self) -> NoReturn:
         try:
             while True:

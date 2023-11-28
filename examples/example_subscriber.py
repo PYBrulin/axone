@@ -29,9 +29,6 @@ class ExampleNodeSubscriber:
     def print(self, message: str) -> None:
         print(message.get("message"))
 
-    def wait(self, duration: float) -> None:
-        time.sleep(duration)
-
     def run(self) -> NoReturn:
         try:
             self.node.register_subscribe(
