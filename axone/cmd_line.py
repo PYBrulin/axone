@@ -26,8 +26,15 @@ class CmdLine:
             "rate": {"_cb": self.rate, "_help": "Display the highest rate"},
             "restart": {"_cb": self.restart, "_help": "Restart the node"},
             "config": {
-                "_cb": self.config,
-                "_help": "Display the node configuration",
+                "show": {
+                    "_cb": self.config_show,
+                    "_help": "Display the node configuration",
+                },
+                "set": {
+                    "_cb": self.config_set,
+                    "_help": "Set the node configuration with standard arguments: [name, memory_endpoint, memory_size]",
+                },
+                "_help": "Node configuration management",
             },
             "node": {
                 "info": {
@@ -128,19 +135,41 @@ class CmdLine:
         print(f"Highest rate : {self._highest_rate}")
 
     def restart(self, *args) -> None:
-        self.node._memory.shm.close()
-        self.node._memory.shm.unlink()
+        self.node.restart()
 
-        self.node = Node(
-            name=self.node.name,
-            memory_endpoint=self.node.memory_endpoint,
-            memory_size=self.node.memory_size,
-        )
-
-    def config(self, *args) -> None:
+    def config_show(self, *args) -> None:
         print(f"Name : {self.node.name}")
         print(f"Memory endpoint : {self.node.memory_endpoint}")
         print(f"Memory size : {self.node.memory_size}")
+        print(f"Memory block : {self.node._memory._memory_block}")
+
+    def config_set(self, *args) -> None:
+        args = args[0]
+
+        if len(args) < 2:
+            print("Missing arguments")
+            return
+
+        required_restart = False
+
+        if args[0] == "name":
+            if args[1] != self.node.name:
+                required_restart = True
+                self.node.name = args[1]
+        elif args[0] == "endpoint":
+            if args[1] != self.node.memory_endpoint:
+                required_restart = True
+                self.node.memory_endpoint = args[1]
+        elif args[0] == "size":
+            if args[1] != self.node.memory_size:
+                required_restart = True
+                self.node.memory_size = int(args[1])
+        else:
+            print(f"Unknown argument '{args[0]}'")
+            return
+
+        if required_restart:
+            self.node.restart()
 
     # region Node
     def node_info(self, *args) -> None:
@@ -298,7 +327,7 @@ class CmdLine:
                             self._highest_rate = rate
 
                 # Input command
-                command = input(f"({self.node.name})> ")
+                command = input(f"(axone:{self.node.name})> ")
 
                 # Parse command
                 command = command.split(" ")
@@ -307,24 +336,19 @@ class CmdLine:
 
                 # Execute command
                 if command[0] in self._available_commands:
-                    if len(command) == 1:
-                        if "_cb" in self._available_commands[command[0]]:
-                            self._available_commands[command[0]]["_cb"](
-                                command[1:]
-                            )
-                        else:
-                            # Provide help for the specified command
-                            self.help([command[0]])
-
+                    if "_cb" in self._available_commands[command[0]]:
+                        self._available_commands[command[0]]["_cb"](
+                            command[1:]
+                        )
                     elif len(command) >= 2:
                         if command[1] in self._available_commands[command[0]]:
                             self._available_commands[command[0]][command[1]][
                                 "_cb"
                             ](command[2:])
-                        else:
-                            print(
-                                f"Unknown subcommand '{command[1]}' for command '{command[0]}'"
-                            )
+                    else:
+                        print(
+                            f"Unknown subcommand '{command[1]}' for command '{command[0]}'"
+                        )
                     # else:
                     #     print(f"Too many arguments for command '{command[0]}'")
                 else:
