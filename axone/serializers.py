@@ -25,6 +25,8 @@ class SharedMemoryDictSerializer(Protocol):
 class JSONSerializer:
     __slots__ = ()
     encoder = json.JSONEncoder
+    encoder.item_separator = ","
+    encoder.key_separator = ":"
     decoder = json.JSONDecoder
 
     def dumps(self, obj: dict) -> bytes:
