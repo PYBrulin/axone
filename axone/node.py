@@ -169,7 +169,7 @@ class Node:
                 "name": self.name,
             }
         else:
-            logger.error(
+            logger.warning(
                 f"Node {self.node_id} already registered on the memory."
             )
 
