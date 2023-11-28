@@ -41,7 +41,6 @@ class SimpleServerNode:
                         db,
                         sort_keys=True,
                         indent=4,
-                        separators=(",", ": "),
                     )
                 )
 
