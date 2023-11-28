@@ -42,7 +42,7 @@ class ConfigFileNode:
                 print("Memory content :")
                 print(
                     json.dumps(
-                        self.node._memory._read_memory(),
+                        dict(self.node._memory),
                         sort_keys=True,
                         indent=4,
                     )

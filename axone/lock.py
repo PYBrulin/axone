@@ -1,7 +1,8 @@
-import os
+import os  # noqa
 from functools import wraps
 
-if os.getenv("SHARED_MEMORY_USE_LOCK") == "1":
+# if os.getenv("SHARED_MEMORY_USE_LOCK") == "1":
+if True:
     from multiprocessing import Lock
 else:
 
