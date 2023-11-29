@@ -79,19 +79,40 @@ class CmdLine:
                 },
                 "_help": "Topics management",
             },
+            "action": {
+                "list": {
+                    "_cb": self.action_list,
+                    "_help": "Display the action list",
+                },
+                "call": {
+                    "_cb": self.action_call,
+                    "_help": "Call an action with arguments",
+                },
+                "_help": "Actions management",
+            },
         }
 
     def help(self, *args) -> None:
         args = args[0]
 
+        # TODO: There is probably a cleaner way to do this
+
         # If args is provided, display help from the subcommand
         if len(args) == 1:
             if args[0] in self._available_commands:
                 print("Available commands :")
-                for subcommand in self._available_commands[args[0]].items():
+                for j, subcommand in enumerate(
+                    self._available_commands[args[0]].items()
+                ):
                     if isinstance(subcommand[1], dict):
                         print(
-                            f"  {args[0]} {subcommand[0]} : {subcommand[1]['_help']}"
+                            " │ "
+                            if j < len(self._available_commands[args[0]]) - 2
+                            else " └ ",
+                            end="",
+                        )
+                        print(
+                            f"{subcommand[0]:14s} : {subcommand[1]['_help']}"
                         )
             else:
                 print(f"Unknown command '{args[0]}'")
@@ -145,6 +166,7 @@ class CmdLine:
                 self.db,
                 sort_keys=True,
                 indent=4,
+                separators=(", ", ": "),
             )
         )
 
@@ -216,11 +238,27 @@ class CmdLine:
             print("No nodes")
             return
 
-        print("Nodes :")
+        print(f"{'Nodes':^30s} │ {'Params':^10s} │ {'Actions':^10s}")
+        print("─" * 30 + "─┼─" + "─" * 10 + "─┼─" + "─" * 10)
         for node in self.db.keys():
-            print(f"  {node}")
+            print(
+                f"{node:^30s}"
+                + " │ "
+                + (
+                    f"{len(self.db[node].get('parameters', {})):^10d}"
+                    if self.db[node].get('parameters', {})
+                    else f"{'':^10s}"
+                )
+                + " │ "
+                + (
+                    f"{len(self.db[node].get('actions', {})):^10d}"
+                    if self.db[node].get('actions', {})
+                    else f"{'':^10s}"
+                )
+            )
 
     # endregion
+
     # region Topic
 
     def topic_info(self, *args) -> None:
@@ -303,6 +341,7 @@ class CmdLine:
                         topic,
                         sort_keys=True,
                         indent=4,
+                        separators=(", ", ": "),
                     )
                     print(content)
 
@@ -331,6 +370,43 @@ class CmdLine:
 
     # endregion
 
+    # region Action
+    def action_list(self, *args) -> None:
+        """Display the list of all registered actions"""
+        # Actions are registered within node declaration
+        self.db = dict(self.node._memory.get('__nodes', {}))
+
+        # Remove all nodes in self.db that miss the 'actions' key
+        self.db = {k: v for k, v in self.db.items() if 'actions' in v}
+
+        # Remove all keys except the 'actions' key
+        self.db = {
+            k: v['actions'] for k, v in self.db.items() if 'actions' in v
+        }
+
+        if len(self.db) == 0:
+            print("No Actions registered")
+            return
+
+        # Turn the values info function-like strings
+
+        print("Registered actions :")
+        for key, value in self.db.items():
+            if isinstance(value, dict):
+                print(f"{key}")
+                for i, (subkey, subvalue) in enumerate(value.items()):
+                    print(" │ " if i < len(value) - 1 else " └ ", end="")
+                    print(
+                        f"{subkey}({', '.join([f'{sk}: {sv}' for sk, sv in subvalue.items()])})"
+                    )
+            else:
+                print(f"{key:20s} : {value}")
+
+    def action_call(self, *args) -> None:
+        print('Not implemented.')
+
+    # endregion
+
     def watch(self, *args) -> None:
         """Watch the memory content in real-time"""
         print("Press Ctrl+C to exit")
@@ -353,6 +429,7 @@ class CmdLine:
                         self.db,
                         sort_keys=True,
                         indent=4,
+                        separators=(", ", ": "),
                     )
                     print(content)
 
