@@ -26,11 +26,30 @@ pip install axone-0.1.0-py3-none-any.whl
 
 ## Usage
 
+```mermaid
+---
+title: A node
+---
+classDiagram
+    direction LR
+    class Node_name{
+        +parameters
+        +actions()
+    }
+    class Node_2{
+    }
+
+    Node_name --> Node_2 : This is a topic being published
+    Node_name ..|> Node_2 : This is a service/action call
+```
+
 ### Shared memory
 
 Axone uses shared memory to communicate between nodes. A shared memory is created by the first node that uses it, and it is accessible by all nodes that use the same name.
 
 The shared memory is identified by a name, and the size of the shared memory must be specified when creating it. The size of the shared memory is commonly a power of 2.
+
+To handle concurrent access to the shared memory, Axone relies on a file lock to ensure that only one process can access the shared memory at a time. The file lock creation is handled by the cross-platform package `filelock` which is the only dependency of this project.
 
 For more information on shared memory, see the [Python documentation](https://docs.python.org/3/library/multiprocessing.shared_memory.html).
 
@@ -44,25 +63,42 @@ node = Node(
 )
 ```
 
-```mermaid
-classDiagram
-    class Node{
-        +name
-        +parameters
-        +actions()
-    }
+Note that for multiple nodes, it is also possible to load the network configuration from a file using the `load_network` method of the `Node` class. The method takes the path to the network configuration file as an argument. The network configuration file must be a JSON file with the following structure:
+
+The JSON file defining the network configuration. Only the `memory_endpoint` and `memory_size` keys are required.
+
+```json
+{
+  "memory_endpoint": "ExampleNodeMemory",
+  "memory_size": 8192
+}
+```
+
+The Python code to load the network configuration from the JSON file.
+
+```python
+from axone.node import Node
+
+node = Node(
+    name="example_node", # Name of the node
+    config_file="axone.json", # The above JSON file
+)
 ```
 
 ### Publisher/Subscriber
 
 ```mermaid
+---
+title: Publisher/Subscriber
+---
 classDiagram
+    direction LR
     class example_publisher
     class example_subscriber
 
-    example_publisher --> example_subscriber : topic_published_once
-    example_publisher --> example_subscriber : topic_published_rate
-    example_publisher --> example_subscriber : topic_published_rate_func
+    example_publisher --> example_subscriber : topic_published_once\n(rate = -1)
+    example_publisher --> example_subscriber : topic_published_rate\n(rate = 3 Hz)
+    example_publisher --> example_subscriber : topic_published_rate_func\n(rate = 2 Hz)
 ```
 
 A publisher can be created using the `publish` or `publish_once` method of a node. The method takes the name of the topic to publish to, and the data to publish. It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a JSON-serializable object as the message.
@@ -107,7 +143,10 @@ node.register_subscribe("topic_published_once", callback=callback)
 title: Service/Client
 ---
 classDiagram
-    class example_actuator
+    direction LR
+    class example_actuator{
+        +move_reponse(xy, yz, zx)
+    }
     class example_performer{
         +display(message)
         +move(x, y, z)
@@ -168,7 +207,11 @@ The `answer` argument accept either a string matching the action name, or direct
 ### Parameter server
 
 ```mermaid
+---
+title: List of parameters
+---
 classDiagram
+    direction LR
     class Node{
         +x
         +y
@@ -202,10 +245,16 @@ The `examples` folder contains a few examples of nodes that can be run using the
 When running all `example_*.py` files, the following communication graph is created:
 
 ```mermaid
+---
+title: Examples communication graph
+---
 classDiagram
+    direction LR
     class example_publisher
     class example_subscriber
-    class example_actuator
+    class example_actuator{
+        +move_reponse(xy, yz, zx)
+    }
     class example_performer{
         +x
         +y
@@ -215,8 +264,10 @@ classDiagram
         +stop()
     }
 
-    example_publisher --> example_subscriber : topic_published_once
-    example_publisher --> example_subscriber : topic_published_rate
+    example_publisher --> example_subscriber : topic_published_once\n(rate = -1)
+    example_publisher --> example_subscriber : topic_published_rate\n(rate = 3 Hz)
+    example_publisher --> example_subscriber : topic_published_rate_func\n(rate = 2 Hz)
     example_actuator ..|> example_performer : print(message="Hello")
     example_actuator ..|> example_performer : move(x=1,y=2,z=3)
+    example_performer ..|> example_actuator : move_reponse(xy=x+y,yz=y+z,zx=z+x)
 ```
