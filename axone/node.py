@@ -390,15 +390,18 @@ class Node:
             # TODO: Find a way to do this in a single operation (Some sort of atomic operation)
             # It currently fetch the same actions multiple times
             # Alternatives! ===================================================
-            action_buffer = []
-            remaining_actions = []
-            for action in self._memory.get('__actions', default=[]):
-                # Note: two operations means that other node can acquire the lock in between
-                if action["__dst"] == self.node_id:
-                    action_buffer.append(action)
-                else:
-                    remaining_actions.append(action)
-            self._memory['__actions'] = remaining_actions
+
+            action_buffer = self._memory.split_actions_db(self.node_id)
+
+            # action_buffer = []
+            # remaining_actions = []
+            # for action in self._memory.get('__actions', default=[]):
+            #     # Note: two operations means that other node can acquire the lock in between
+            #     if action["__dst"] == self.node_id:
+            #         action_buffer.append(action)
+            #     else:
+            #         remaining_actions.append(action)
+            # self._memory['__actions'] = remaining_actions
             # Alternatives! ===================================================
             # action_buffer = list(
             #     filter(
@@ -505,13 +508,10 @@ class Node:
                         f"Answer action {answer} is not a string or a function. Answer action will be ignored."
                     )
 
-            # db["__actions"] += [{action: kwargs} | properties]
-
-            # # Write back to memory
-            # self._memory["__actions"] = db["__actions"]
+            db["__actions"] += [{action: kwargs} | properties]
 
             # Write back to memory
-            self._memory["__actions"] += [{action: kwargs} | properties]
+            self._memory["__actions"] = db["__actions"]
 
             logger.debug(
                 f"Called action {action} on node {dest_node}.",
