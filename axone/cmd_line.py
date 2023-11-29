@@ -263,7 +263,7 @@ class CmdLine:
                         print(
                             f"{round(time.time() - subvalue, 3)} s ago", end=""
                         )
-                        print(f"({value.get('__rate', -1)} Hz)")
+                        print(f" ({value.get('__rate', -1)} Hz)")
                     elif subkey == '__source':
                         print(f"{'Publisher':17s} : {subvalue}")
                     else:

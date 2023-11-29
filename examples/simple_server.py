@@ -1,12 +1,13 @@
 import json
-import logging
+import logging  # noqa
 import os
 import time
 from typing import NoReturn
 
 from axone.node import Node
+from examples.custom_logger import setup_logger
 
-logging.basicConfig(level=logging.INFO)
+setup_logger(debug=False)
 
 
 class SimpleServerNode:

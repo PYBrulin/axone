@@ -1,5 +1,7 @@
-# Project 
+# Project
 axone/_version.py
+*.json
+!examples/axone.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -77,3 +79,6 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# others
+.vscode/
