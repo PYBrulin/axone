@@ -1,4 +1,4 @@
-import logging
+import logging  # noqa
 import os
 import time
 from typing import NoReturn
@@ -6,7 +6,11 @@ from typing import NoReturn
 from axone.node import Node
 
 os.system("cls||clear")  # Clear the terminal
-logging.basicConfig(level=logging.INFO)
+
+
+from custom_logger import setup_logger
+
+setup_logger(debug=False)
 
 
 class ExampleNodeSubscriber:
