@@ -77,6 +77,21 @@ class SharedMemoryDict:
         yield db
         self._save_memory(db)
 
+    @lock
+    def split_actions_db(self, dst):
+        db = self._read_memory()
+        actions = self.get("__actions")
+        action_buffer, actions = [x for x in actions if x["__dst"] == dst], [
+            x for x in actions if x["__dst"] != dst
+        ]
+        # print()
+        # print("action_buffer", action_buffer)
+        # print()
+        # print("remai_actions", actions)
+        db["__actions"] = actions
+        self._save_memory(db)
+        return action_buffer
+
     def __getitem__(self, key: str) -> Any:
         return self._read_memory()[key]
 
