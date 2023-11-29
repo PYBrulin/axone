@@ -1,4 +1,4 @@
-import logging
+import logging  # noqa
 import os
 import time
 from typing import Dict, NoReturn
@@ -6,7 +6,11 @@ from typing import Dict, NoReturn
 from axone.node import Node
 
 os.system("cls||clear")  # Clear the terminal
-logging.basicConfig(level=logging.INFO)
+
+
+from custom_logger import setup_logger
+
+setup_logger(debug=False)
 
 
 class ExampleNodePerformer:
@@ -59,10 +63,7 @@ class ExampleNodePerformer:
         self.parameters["y"] = y
         self.parameters["z"] = z
         print(f"Moving around {x}, {y}, {z}")
-        # ! Note it is not possible to call self.node.update_parameters here
-        # ! because the node is not thread safe
-
-        # Send an answer to the caller
+        # Return an answer to the caller
         return {
             "xy": x * y,
             "yz": y * z,

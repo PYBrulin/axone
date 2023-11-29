@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from contextlib import contextmanager
+from functools import wraps
 from multiprocessing.shared_memory import SharedMemory
 from typing import (
     Any,
@@ -14,7 +15,8 @@ from typing import (
     ValuesView,
 )
 
-from .lock import lock
+from filelock import FileLock as Lock
+
 from .serializers import (
     NULL_BYTE,
     DeserializationError,
@@ -25,11 +27,27 @@ from .serializers import (
 NOT_GIVEN = object()
 DEFAULT_SERIALIZER = JSONSerializer()
 
-
 logger = logging.getLogger(__name__)
 
 
+def lock(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Note regarding the use of self in the decorator:
+        # Decorator is applied when the function is defined, which is at class
+        # creation time, not at instance creation time. To use an instance
+        # variable in a decorator, a decorator that can take self as an
+        # argument can be used even if self is not used in the function.
+        # print("Using this lock:", self._lock.lock_file)
+        with self._lock:  # noqa
+            return func(self, *args, **kwargs)
+
+    return wrapper
+
+
 class SharedMemoryDict:
+    _lock = None
+
     def __init__(
         self,
         name: str,
@@ -39,8 +57,20 @@ class SharedMemoryDict:
     ) -> None:
         super().__init__()
         self._serializer = serializer
+
+        # Create lock matching shared memory name
+        # This is to prevent multiple processes from accessing the same
+        # lock if they access different shared memory at the same time
+        self._lock = Lock(
+            os.path.join(
+                os.path.expanduser("~"),
+                f"{name}.axone.lock",
+            )
+        )
+
+        # Create shared memory block
         self._memory_block = self._get_or_create_memory_block(
-            "sm_{name}".format(name=name), size
+            f"sm_{name}", size
         )
         self._ensure_memory_initialization()
 
@@ -73,12 +103,15 @@ class SharedMemoryDict:
     @contextmanager
     @lock
     def _modify_db(self) -> Generator:
+        # print("[ modify_db")
         db = self._read_memory()
         yield db
         self._save_memory(db)
+        # print("  modify_db ]")
 
     @lock
     def split_actions_db(self, dst):
+        # print("[ split_actions_db")
         db = self._read_memory()
         actions = self.get("__actions")
         action_buffer, actions = [x for x in actions if x["__dst"] == dst], [
@@ -90,6 +123,7 @@ class SharedMemoryDict:
         # print("remai_actions", actions)
         db["__actions"] = actions
         self._save_memory(db)
+        # print("  split_actions_db ]")
         return action_buffer
 
     def __getitem__(self, key: str) -> Any:
@@ -211,6 +245,7 @@ class SharedMemoryDict:
         try:
             return self._serializer.loads(self._memory_block.buf.tobytes())
         except DeserializationError:
+            logger.exception("Failed to deserialize shared memory")
             # Reset memory
             self._save_memory({})
             return {}

@@ -81,12 +81,16 @@ class Node:
         self._executor = ThreadPoolExecutor(max_workers=10)
         self._executor.submit(self._listen)
 
-        # Initialize a Thread to cleanup the memory periodically
-        self._cleaner_executor = ThreadPoolExecutor(max_workers=10)
-        self._cleaner_executor.submit(self._cleanup)
+        # Initialize a Thread to listen to the actions
+        if self.actions is not None:
+            self._action_executor = ThreadPoolExecutor(max_workers=1)
 
         # Register node on the memory
         self._register_node()
+
+        # Initialize a Thread to cleanup the memory periodically
+        self._cleaner_executor = ThreadPoolExecutor(max_workers=10)
+        self._cleaner_executor.submit(self._cleanup)
 
     @property
     def node_id(self) -> str:
@@ -345,7 +349,7 @@ class Node:
             self._memory["__actions"] = []
 
         if self.actions is not None:
-            self._executor.submit(self._listen_action)
+            self._action_executor.submit(self._listen_action)
 
             # format the actions dictionary
             self._actions_map = {}
@@ -372,9 +376,7 @@ class Node:
             if database is None:
                 self._memory["__nodes"] = db
 
-    def _listen_action(
-        self,
-    ) -> None:
+    def _listen_action(self) -> None:
         """Listen to actions."""
         # Listening and processing actions might take some time
         # Therefore, to not block the memory, we first need to fetch and remove
@@ -384,8 +386,8 @@ class Node:
         while True:
             action_buffer = []
 
-            if not "__actions" in self._memory:
-                continue
+            # if not "__actions" in self._memory:
+            #     continue
 
             # TODO: Find a way to do this in a single operation (Some sort of atomic operation)
             # It currently fetch the same actions multiple times
@@ -428,7 +430,6 @@ class Node:
                     + "\n\t".join([str(_) for _ in action_buffer])
                 )
 
-            logger.debug(f"Action buffer: {action_buffer}")
             for action in action_buffer:
                 # Find the appropriate callback for the action
                 # Get the first key in action that does not start with "__"
@@ -472,31 +473,17 @@ class Node:
         **kwargs: Any,
     ) -> None:
         """Call an action on a node."""
-        db = dict(self._memory)
-
         # Check if the action is available
         # We need to check if the node is available first, otherwise the action
         #  buffer will get congested with inexistent action calls
-        if action in db.get("__nodes", {}).get(dest_node, {}).get(
-            "actions", {}
-        ):
-            # Replace any previous call to the same action that has not been executed yet
-            db["__actions"] = [
-                _action
-                for _action in db["__actions"]
-                if not (
-                    _action.get("__dst") == dest_node
-                    and _action.get("__src") == self.node_id
-                    and action in _action.keys()
-                )
-            ]
-
+        if action in self.list_node_actions(dest_node):
             # Action is available
             properties = {
                 "__dst": dest_node,
                 "__src": self.node_id,
                 "__timestamp": time.time(),
             }
+
             # Add the name of the answer action if any
             if answer is not None:
                 if callable(answer):
@@ -508,10 +495,20 @@ class Node:
                         f"Answer action {answer} is not a string or a function. Answer action will be ignored."
                     )
 
-            db["__actions"] += [{action: kwargs} | properties]
+            # db["__actions"] += [{action: kwargs} | properties]
 
-            # Write back to memory
-            self._memory["__actions"] = db["__actions"]
+            # Replace any previous call to the same action that has not been executed yet
+            self._memory["__actions"] = [
+                _action
+                for _action in self._memory.get("__actions", [])
+                if not (
+                    _action.get("__dst") == dest_node
+                    and _action.get("__src") == self.node_id
+                    and action in _action.keys()
+                )
+            ] + [{action: kwargs} | properties]
+            # # Write back to memory
+            # self._memory["__actions"] = db["__actions"]
 
             logger.debug(
                 f"Called action {action} on node {dest_node}.",
@@ -529,8 +526,9 @@ class Node:
 
     def list_node_actions(self, node_id: str) -> Dict[str, Any]:
         """List the actions available for a node."""
-        nodes = self._memory.get("__nodes", default={})
-        return nodes[node_id].get("actions", {})
+        return (
+            self._memory.get("__nodes", {}).get(node_id, {}).get("actions", {})
+        )
 
     # endregion
 
