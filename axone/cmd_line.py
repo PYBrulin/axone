@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import time
 
@@ -79,16 +80,16 @@ class CmdLine:
                 },
                 "_help": "Topics management",
             },
-            "action": {
+            "service": {
                 "list": {
-                    "_cb": self.action_list,
-                    "_help": "Display the action list",
+                    "_cb": self.service_list,
+                    "_help": "Display the service list",
                 },
                 "call": {
-                    "_cb": self.action_call,
-                    "_help": "Call an action with arguments",
+                    "_cb": self.service_call,
+                    "_help": "Call an service with arguments",
                 },
-                "_help": "Actions management",
+                "_help": "Services management",
             },
         }
 
@@ -215,9 +216,13 @@ class CmdLine:
         args = args[0]
 
         if len(args) == 0:
-            node = self.node._memory.get("__nodes", {})[self.node.name]
-        elif args[0] in self.node._memory.get("__nodes", {}):
-            node = self.node._memory.get("__nodes", {})[args[0]]
+            node = self.node._memory.get("__nds", {})[self.node.node_id]
+        elif args[0] in self.node._memory.get("__nds", {}):
+            _nodes = self.node.find_node_by_name(args[0])
+            if not _nodes:
+                print(f"Unknown node '{args[0]}'")
+                return
+            node = _nodes[0]
         else:
             print(f"Unknown node '{args[0]}'")
             return
@@ -229,30 +234,35 @@ class CmdLine:
                     print(" │ " if i < len(value) - 1 else " └ ", end="")
                     print(f"{subkey:17s} : {subvalue}")
             else:
+                if key.startswith("__"):
+                    if key == "__t":
+                        key = "Last timestamp"
+                    if key == "__n":
+                        key = "Node name"
                 print(f"{key:20s} : {value}")
 
     def node_list(self, *args) -> None:
         """Display the list of nodes"""
-        self.db = self.node._memory.get("__nodes", {})
+        self.db = self.node._memory.get("__nds", {})
         if len(self.db) == 0:
             print("No nodes")
             return
 
-        print(f"{'Nodes':^30s} │ {'Params':^10s} │ {'Actions':^10s}")
+        print(f"{'Nodes':^30s} │ {'Params':^10s} │ {'Services':^10s}")
         print("─" * 30 + "─┼─" + "─" * 10 + "─┼─" + "─" * 10)
         for node in self.db.keys():
             print(
-                f"{node:^30s}"
+                f"{self.db[node].get('__n', node):^30s}"
                 + " │ "
                 + (
-                    f"{len(self.db[node].get('parameters', {})):^10d}"
-                    if self.db[node].get('parameters', {})
+                    f"{len(self.db[node].get('__p', {})):^10d}"
+                    if self.db[node].get('__p', {})
                     else f"{'':^10s}"
                 )
                 + " │ "
                 + (
-                    f"{len(self.db[node].get('actions', {})):^10d}"
-                    if self.db[node].get('actions', {})
+                    f"{len(self.db[node].get('__s', {})):^10d}"
+                    if self.db[node].get('__s', {})
                     else f"{'':^10s}"
                 )
             )
@@ -288,7 +298,7 @@ class CmdLine:
                     sorted(value.items(), key=lambda item: item[0])
                 ):
                     # Skip the rate
-                    if subkey == "__rate":
+                    if subkey == "__r":
                         continue
 
                     print(
@@ -296,14 +306,16 @@ class CmdLine:
                         end="",
                     )
 
-                    if subkey == "__timestamp":
+                    if subkey == "__t":
                         print(f"{'Last publication':17s} : ", end="")
                         print(
                             f"{round(time.time() - subvalue, 3)} s ago", end=""
                         )
-                        print(f" ({value.get('__rate', -1)} Hz)")
-                    elif subkey == '__source':
-                        print(f"{'Publisher':17s} : {subvalue}")
+                        print(f" ({value.get('__r', -1)} Hz)")
+                    elif subkey == '__s':
+                        print(
+                            f"{'Publisher':17s} : {self.db['__nds'][subvalue]['__n']}"
+                        )
                     else:
                         print(f"{subkey:17s} : {subvalue}")
             else:
@@ -311,7 +323,11 @@ class CmdLine:
 
     def topic_echo(self, *args) -> None:
         """Subscribe to a topic and display its content in real time"""
-        topic_name = args[0][0]
+        args = args[0]
+        if len(args) == 0:
+            print("Missing topic name")
+            return
+        topic_name = args[0]
 
         if len(args) == 0:
             print("Missing topic name")
@@ -346,7 +362,7 @@ class CmdLine:
                     print(content)
 
                     timestamp = topic.get("__timestamp", 0)
-                    rate = topic.get("__rate", -1)
+                    rate = topic.get("__r", -1)
 
                     # Sleep until the next message
                     if rate > 0:
@@ -370,27 +386,25 @@ class CmdLine:
 
     # endregion
 
-    # region Action
-    def action_list(self, *args) -> None:
-        """Display the list of all registered actions"""
-        # Actions are registered within node declaration
-        self.db = dict(self.node._memory.get('__nodes', {}))
+    # region service
+    def service_list(self, *args) -> None:
+        """Display the list of all registered services"""
+        # services are registered within node declaration
+        self.db = dict(self.node._memory.get('__nds', {}))
 
-        # Remove all nodes in self.db that miss the 'actions' key
-        self.db = {k: v for k, v in self.db.items() if 'actions' in v}
+        # Remove all nodes in self.db that miss the 'services' key
+        self.db = {k: v for k, v in self.db.items() if '__s' in v}
 
-        # Remove all keys except the 'actions' key
-        self.db = {
-            k: v['actions'] for k, v in self.db.items() if 'actions' in v
-        }
+        # Remove all keys except the '__s' key
+        self.db = {k: v['__s'] for k, v in self.db.items() if '__s' in v}
 
         if len(self.db) == 0:
-            print("No Actions registered")
+            print("No services registered")
             return
 
         # Turn the values info function-like strings
 
-        print("Registered actions :")
+        print("Registered services :")
         for key, value in self.db.items():
             if isinstance(value, dict):
                 print(f"{key}")
@@ -402,7 +416,7 @@ class CmdLine:
             else:
                 print(f"{key:20s} : {value}")
 
-    def action_call(self, *args) -> None:
+    def service_call(self, *args) -> None:
         print('Not implemented.')
 
     # endregion
@@ -436,7 +450,7 @@ class CmdLine:
                     self._highest_rate = 1
                     for topic in self.db.keys():
                         if isinstance(self.db[topic], dict):
-                            rate = self.db[topic].get("__rate", 0)
+                            rate = self.db[topic].get("__r", 0)
                             if rate > self._highest_rate:
                                 self._highest_rate = rate
 
@@ -460,7 +474,7 @@ class CmdLine:
                 self._highest_rate = 1
                 for topic in self.db.keys():
                     if isinstance(self.db[topic], dict):
-                        rate = self.db[topic].get("__rate", 0)
+                        rate = self.db[topic].get("__r", 0)
                         if rate > self._highest_rate:
                             self._highest_rate = rate
 
@@ -535,7 +549,19 @@ if __name__ == '__main__':
         default=None,
         help='configuration file',
     )
+    parser.add_argument(
+        '-d',
+        '--debug',
+        action='store_true',
+        help='debug mode',
+    )
     args = parser.parse_args()
     kwargs = vars(args)
+
+    logging.basicConfig(
+        level=logging.DEBUG if kwargs['debug'] else logging.INFO,
+        format='%(asctime)s %(levelname)-8s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    )
 
     CmdLine(**kwargs).main()

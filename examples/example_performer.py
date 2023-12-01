@@ -15,7 +15,7 @@ setup_logger(debug=False)
 
 class ExampleNodePerformer:
     """
-    Example Node to register actions and parameters
+    Example Node to register services and parameters
     This node functions can be called by the node "example_actuator"
     """
 
@@ -27,8 +27,8 @@ class ExampleNodePerformer:
             "z": 3,
         }
 
-        # Class actions/callbacks
-        actions = {
+        # Class services/callbacks
+        services = {
             self.print: {
                 "message": "str",
             },
@@ -46,10 +46,11 @@ class ExampleNodePerformer:
             memory_endpoint="ExampleNodeMemory",
             memory_size=4096,
             parameters=self.parameters,
-            actions=actions,
+            services=services,
+            hide_services=True,
         )
 
-    # region action callbacks
+    # region service callbacks
     def print(self, message: str) -> None:
         print(message)
 
@@ -76,7 +77,7 @@ class ExampleNodePerformer:
     # endregion
 
     def run(self) -> NoReturn:
-        # Actions are already pre-registered in the node
+        # services are already pre-registered in the node
         # There is nothing to do here except wait for a call
         try:
             while True:

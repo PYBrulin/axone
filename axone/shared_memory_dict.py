@@ -103,28 +103,34 @@ class SharedMemoryDict:
     @contextmanager
     @lock
     def _modify_db(self) -> Generator:
-        # print("[ modify_db")
         db = self._read_memory()
         yield db
         self._save_memory(db)
-        # print("  modify_db ]")
 
     @lock
-    def split_actions_db(self, dst):
-        # print("[ split_actions_db")
+    def modify_structure(self, key_list, new_value):
+        """Modify the structure of the shared memory object given a list of keys"""
         db = self._read_memory()
-        actions = self.get("__actions")
-        action_buffer, actions = [x for x in actions if x["__dst"] == dst], [
-            x for x in actions if x["__dst"] != dst
-        ]
-        # print()
-        # print("action_buffer", action_buffer)
-        # print()
-        # print("remai_actions", actions)
-        db["__actions"] = actions
+
+        temp = db
+        for key in key_list[:-1]:
+            if key not in temp:
+                return
+            temp = temp[key]
+        temp[key_list[-1]] = new_value
+
         self._save_memory(db)
-        # print("  split_actions_db ]")
-        return action_buffer
+
+    @lock
+    def process_lambda(self, func, *args):
+        """Process a lambda function on the shared memory
+        The function must alter the object db in-place and either return
+        nothing or return a value that this function will return in turn.
+        """
+        db = self._read_memory()
+        ans = func(db, *args)
+        self._save_memory(db)
+        return ans
 
     def __getitem__(self, key: str) -> Any:
         return self._read_memory()[key]
