@@ -15,18 +15,18 @@ setup_logger(debug=False)
 
 class ExampleNodeActuator:
     """
-    Example Node to call actions of another node
-    This node functions can call the actions of the node "example_performer"
+    Example Node to call services of another node
+    This node functions can call the services of the node "example_performer"
     """
 
     def __init__(self) -> None:
-        # Class actions/callbacks
-        actions = {
+        # Class services/callbacks
+        services = {
             self.move_response: {
                 "xy": "float",
                 "yz": "float",
                 "zx": "float",
-            },  # A call back response function triggered by the response of the action "move"
+            },  # A call back response function triggered by the response of the service "move"
         }
 
         # Register node
@@ -34,7 +34,7 @@ class ExampleNodeActuator:
             name="example_actuator",
             memory_endpoint="ExampleNodeMemory",
             memory_size=4096,
-            actions=actions,
+            services=services,
         )
 
     def move_response(
@@ -43,7 +43,7 @@ class ExampleNodeActuator:
         yz: float,
         zx: float,
     ) -> None:
-        """Receive the response of the action "move" which is the sum of the parameters x+y, y+z, z+x"""
+        """Receive the response of the service "move" which is the sum of the parameters x+y, y+z, z+x"""
         print(
             "Received a response from move: "
             + f"x+y = {xy}, y+z = {yz}, z+x = {zx}"
@@ -53,49 +53,49 @@ class ExampleNodeActuator:
         try:
             while True:
                 # Try to find the node "example_performer" in the network
-                target_nodes = self.node.find_node_by_name("example_performer")
-                if not target_nodes:
+                target_node = self.node.find_node_by_name("example_performer")
+                if not target_node:
                     print("Target node not found")
                 else:  # Found the target node
-                    # List the available actions of the target node
-                    for target_node in target_nodes:
-                        # Call the action "print" of the target node
-                        self.node.call_action(
-                            dest_node=target_node,
-                            action="print",
-                            message="Hello from example_actuator",
-                        )
-                        print("Called action print")
-                        time.sleep(1)
+                    # List the available services of the target node
+                    print(
+                        f"Available services of {target_node}: {self.node.list_node_services(target_node)}"
+                    )
+                    # Call the service "print" of the target node
+                    self.node.call_service(
+                        dest_node_id=target_node,
+                        service="print",
+                        message="Hello from example_actuator",
+                    )
+                    print("Called service print")
+                    time.sleep(1)
 
-                        # Call the action "move" of the target node
-                        self.node.call_action(
-                            dest_node=target_node,
-                            action="move",
-                            answer=self.move_response,
-                            x=round(
-                                math.sin(10 * time.time() * math.pi / 180), 4
+                    # Call the service "move" of the target node
+                    self.node.call_service(
+                        dest_node_id=target_node,
+                        service="move",
+                        answer=self.move_response,
+                        x=round(math.sin(10 * time.time() * math.pi / 180), 4),
+                        y=round(
+                            math.sin(
+                                10 * time.time() * math.pi / 180
+                                + math.pi * 1 / 3
                             ),
-                            y=round(
-                                math.sin(
-                                    10 * time.time() * math.pi / 180
-                                    + math.pi * 1 / 3
-                                ),
-                                4,
+                            4,
+                        ),
+                        z=round(
+                            math.sin(
+                                10 * time.time() * math.pi / 180
+                                + math.pi * 2 / 3
                             ),
-                            z=round(
-                                math.sin(
-                                    10 * time.time() * math.pi / 180
-                                    + math.pi * 2 / 3
-                                ),
-                                4,
-                            ),
-                        )
-                        print("Called action move")
+                            4,
+                        ),
+                    )
+                    print("Called service move")
 
-                        print(
-                            f"Parameters of {target_node}: {self.node.get_parameters(target_node)}"
-                        )
+                    print(
+                        f"Parameters of {target_node}: {self.node.get_parameters(target_node)}"
+                    )
 
                     print(f"Memory size : {self.node._memory.size}")
 
