@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import random
+import string
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -10,22 +12,28 @@ from .shared_memory_dict import SharedMemoryDict
 logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 5
 MAX_RETRIES = 10
+TIMESTAMP_PRECISION = 3
+TIMESTAMP_RANGE = 60 * 60 * 24 * 365  # 1 year
 
 
 class Node:
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, name: str, **kwargs) -> None:
         """Initialize a node for the Axone framework.
 
         Args:
-            name (str, optional): The name of the node. Defaults to "".
+            name (str): The name of the node. Defaults to "".
             memory_endpoint (str, optional): The name of the shared memory. Defaults to "".
             memory_size (Optional[int], optional): The size of the shared memory. Defaults to None.
             parameters (Optional[Dict[str, Any]], optional): The parameters of the node. Defaults to None.
-            actions (Optional[Dict[str, Any]], optional): The actions of the node. Defaults to None.
+            services (Optional[Dict[str, Any]], optional): The services of the node. Defaults to None.
             config_file (Optional[str], optional): The path to a config file which Can be used to load a common set of
                 parameters for all nodes on the same system from a json file. Defaults to None.
-            action_server_rate (float, optional): The rate at which the action server is checked for new actions.
+            service_server_rate (float, optional): The rate at which the service server is checked for new services.
                 Defaults to 10Hz.
+            hide_services (bool, optional): Whether to advertise or hide the services from the memory.
+                Useful if the full system architecture is known in advance. Defaults to False.
+            timestamp_precision (int, optional): The precision of the timestamp. Defaults to 3.
+            timestamp_range (int, optional): The range of the timestamp. Defaults to 60 * 60 * 24 * 365 (1 year).
 
         Raises:
             ValueError: Whether a required parameter is missing.
@@ -48,14 +56,10 @@ class Node:
                     f"Config file {self.config_file} does not exist."
                 )
 
-        self._name = kwargs.get("name", "")
+        # Node parameters
+        self._name = name
         self._memory_endpoint = kwargs.get("memory_endpoint", "")
         self._memory_size = kwargs.get("memory_size", None)
-        self._parameters = kwargs.get("parameters", None)
-        self._actions = kwargs.get("actions", None)
-        self._action_server_rate = 1 / float(
-            kwargs.get("action_server_rate", 10)
-        )
 
         # Check for required parameters
         if self.name == "":
@@ -63,8 +67,24 @@ class Node:
         if self.memory_endpoint == "":
             raise ValueError("Memory endpoint cannot be empty.")
 
+        # Parameters parameters
+        self._parameters = kwargs.get("parameters", None)
+
+        # services parameters
+        self._services = kwargs.get("services", None)
+        self._service_server_rate = 1 / float(
+            kwargs.get("service_server_rate", 10)
+        )
+        self._hide_services = kwargs.get("hide_services", False)
+
+        # Timestamp parameters
+        self._timestamp_precision = kwargs.get(
+            "timestamp_precision", TIMESTAMP_PRECISION
+        )
+        self._timestamp_range = kwargs.get("timestamp_range", TIMESTAMP_RANGE)
+
         # Store the kwargs for later use
-        # In case of a restart, the node will be reinitialized with the same kwargs
+        # In case of a node restart, the node will be reinitialized with the same kwargs
         self.kwargs = kwargs
 
         # Initialize the shared memory
@@ -75,22 +95,22 @@ class Node:
         # Generate a unique node id
         self._node_id = self._get_node_id()
 
-        self._actions_map = {}
+        self._services_map = {}
 
         # Initialize a Thread to listen to the memory events
         self._executor = ThreadPoolExecutor(max_workers=10)
         self._executor.submit(self._listen)
 
-        # Initialize a Thread to listen to the actions
-        if self.actions is not None:
-            self._action_executor = ThreadPoolExecutor(max_workers=1)
+        # Initialize a Thread to listen to the services
+        if self.services is not None:
+            self._service_executor = ThreadPoolExecutor(max_workers=1)
 
         # Register node on the memory
         self._register_node()
 
         # Initialize a Thread to cleanup the memory periodically
-        self._cleaner_executor = ThreadPoolExecutor(max_workers=10)
-        self._cleaner_executor.submit(self._cleanup)
+        self._federated_executor = ThreadPoolExecutor(max_workers=1)
+        self._federated_executor.submit(self._federated_server)
 
     @property
     def node_id(self) -> str:
@@ -142,52 +162,78 @@ class Node:
         self.kwargs["parameters"] = parameters
 
     @property
-    def actions(self) -> Optional[Dict[str, Any]]:
-        """Return the node actions."""
-        return self._actions
+    def services(self) -> Optional[Dict[str, Any]]:
+        """Return the node services."""
+        return self._services
 
-    @actions.setter
-    def actions(self, actions: Optional[Dict[str, Any]]) -> None:
-        """Set the node actions."""
-        self._actions = actions
-        self.kwargs["actions"] = actions
+    @services.setter
+    def services(self, services: Optional[Dict[str, Any]]) -> None:
+        """Set the node services."""
+        self._services = services
+        self.kwargs["services"] = services
 
     @property
-    def action_server_rate(self) -> float:
-        """Return the action server rate."""
-        return self._action_server_rate
+    def service_server_rate(self) -> float:
+        """Return the service server rate."""
+        return self._service_server_rate
+
+    @property
+    def hide_services(self) -> bool:
+        """Return the service server rate."""
+        return self._hide_services
+
+    @property
+    def _timestamp(self) -> int | float:
+        return self._get_timestamp()
 
     def _get_node_id(self) -> str:
         """Generate a unique node id."""
-        return (
-            self.name
-        )  # "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        return "".join(
+            random.choices(string.ascii_letters + string.digits, k=10)
+        )
+
+    def _get_timestamp(self) -> int | float:
+        """Output a formatted timestamp."""
+        # TODO:Limit the range of the timestamp.
+        # TODO:Currently Assume that the timestamp can not be older than 1 year.
+        # TODO:This will prevent the timestamp from taking too much space in the memory.
+        # Idea base the timestamp on the oldest node in the memory.
+        # And reduce the floating point precision to 3 digits
+        return round(
+            time.time(),  # TODO: % self._timestamp_range,
+            self._timestamp_precision
+            if self._timestamp_precision > 0
+            else None,  # If ndigits is None round() converts to int
+        )
 
     def _register_node(self) -> None:
         """Register node on the memory."""
         # TODO:  https://stackoverflow.com/questions/16676177/setting-an-item-in-nested-dictionary-with-setitem
-        db = self._memory.get("__nodes", default={})
 
-        # Register node within __nodes if not already registered
-        if self.node_id not in db:
-            logger.info(f"Registering node {self.node_id} on the memory.")
-            db[self.node_id] = {
-                "name": self.name,
-            }
-        else:
+        # Register node within __nds if not already registered
+        while self.node_id in self._memory.get("__nds", default={}):
             logger.warning(
                 f"Node {self.node_id} already registered on the memory."
             )
+            self._node_id = self._get_node_id()
+
+        _db = self._memory.get("__nds", default={})
+
+        logger.info(f"Registering node {self.node_id} on the memory.")
+        _db[self.node_id] = {
+            "__n": self.name,
+            "__t": self._timestamp,
+        }
 
         # Register node parameters
         if self.parameters is not None:
-            db[self.node_id]["parameters"] = self.parameters
+            _db[self.node_id]["__p"] = self.parameters
 
-        # Register node actions
-        self._setup_actions(db)
+        # Register node services
+        self._setup_services(_db)
 
         # Write back to memory
-        self._memory["__nodes"] = db
+        self._memory["__nds"] = _db
 
     def restart(self) -> None:
         """Restart the node."""
@@ -199,6 +245,126 @@ class Node:
 
         # Reinitialize the node
         self.__init__(**self.kwargs)  # ?
+
+    # region Federated server functions
+
+    def _federated_server(self) -> None:
+        """
+        Cleanup the structure periodically.
+        All nodes should call this function periodically to clean up the memory
+
+        As nodes act as a federated system, it is important to have a
+        common and shared cleanup mechanism accross all nodes to avoid memory
+        leaks. All nodes are responsible for maintaining the common master
+        memory structure. The cleanup mechanism is based on the following
+        assumptions:
+            1. All nodes are responsible for cleaning up the shared memory
+            2. Every node might get disconnected from the shared memory at any
+                time
+            3. Rated topics should be used within their timespan to avoid memory
+                leaks
+            4. Topics published only once should be used within a limited
+                timespan to avoid memory leaks
+            5. Services should be executed as soon as possible to avoid memory
+                leaks
+            6. Nodes should be updated periodically to avoid memory leaks
+            7. Nodes should be removed from the memory if they are not updated
+                within a certain timespan to avoid memory leaks
+        """
+        cleanup_time = self._timestamp + DEFAULT_TIMEOUT
+        while True:
+            # Update the heartbeat in the Node structure
+            self._memory.modify_structure(
+                ["__nds", self.node_id, "__t"],
+                self._timestamp,
+            )
+
+            logger.debug(
+                f"Updating heartbeat for node {self.node_id}:{self.name}."
+            )
+
+            if self._timestamp > cleanup_time:
+                cleanup_time = self._timestamp + DEFAULT_TIMEOUT
+
+                logger.debug("Cleaning up memory.")
+
+                # Ensure this node is still registered
+                if self.node_id not in self._memory.get("__nds", {}):
+                    logging.critical(
+                        f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
+                    )
+                    self._register_node()
+
+                # Cleanup unused topics
+                self._memory.process_lambda(self._clear_stale_nodes)
+
+                # Cleanup unused topics
+                self._memory.process_lambda(self._clear_stale_topics)
+
+                # Cleanup unused services
+                self._memory.process_lambda(self._clear_stale_services)
+
+            # Send the heartbeat every second
+            time.sleep(1)
+
+    def _clear_stale_nodes(self, db: Dict[str, Any]) -> None:
+        """
+        Clear stale nodes.
+        Lambda function to be used with the process_lambda function.
+        Modifies the db object in place.
+        """
+        nodes = db.get("__nds", {})
+        nodes = {
+            node_id: node
+            for node_id, node in nodes.items()
+            if node.get("__t", 0) + DEFAULT_TIMEOUT > self._timestamp
+        }
+        db["__nds"] = nodes
+
+    def _clear_stale_topics(self, db: Dict[str, Any]) -> None:
+        """
+        Clear stale topics.
+        Lambda function to be used with the process_lambda function.
+        Modifies the db object in place.
+        """
+        to_remove = []
+        for topic, message in db.items():
+            if topic.startswith("__"):
+                # Skip internal data strtuctures
+                continue
+            if message.get("__s", None) not in db.get("__nds", {}).keys() or (
+                message.get("__t", float("inf"))
+                + 1 / float(message.get("__r", 1))
+                + DEFAULT_TIMEOUT
+                < self._timestamp
+            ):
+                # Remove the topic
+                logger.debug(f"Removing topic {topic} from the memory.")
+                to_remove.append(topic)
+        for topic in to_remove:
+            db.pop(topic)
+
+    def _clear_stale_services(self, db: Dict[str, Any]) -> None:
+        """
+        Clear stale services.
+        Lambda function to be used with the process_lambda function.
+        Modifies the db object in place.
+        """
+        # Note: services should only be cleared based on the timestamp
+        # In the future, we might want services to be broadcasted to multiple nodes
+        # So there won't be any destination node in this case
+        services = db.get("__srv", [])
+        if not services:
+            return db
+        services = [
+            service
+            for service in services
+            if service.get("__t", float('inf')) + DEFAULT_TIMEOUT
+            > self._timestamp
+        ]
+        db["__srv"] = services
+
+    # endregion
 
     # region Publisher functions
     def publish_once(
@@ -217,19 +383,22 @@ class Node:
 
         # Add properties
         properties = {
-            "__source": self.node_id,
-            "__timestamp": time.time(),
-            "__rate": -1 if rate is None else rate,  # -1 means publish once
+            "__s": self.node_id,
+            "__t": self._timestamp,
         }
+        if (
+            rate is not None
+        ):  # Do not add rate if it is published once or rate is unknown
+            properties["__r"] = rate
 
         # Check if the topic is available
-        if self._memory.get(topic, default={}).get("__source") == self.node_id:
+        if self._memory.get(topic, default={}).get("__s") == self.node_id:
             # Topic is available
             self._memory[topic] = message | properties
         elif (
-            self._memory.get(topic, default={}).get("__timestamp", 0)
-            + self._memory.get(topic, default={}).get("__rate", 0)
-            < time.time() + DEFAULT_TIMEOUT
+            self._memory.get(topic, default={}).get("__t", 0)
+            + self._memory.get(topic, default={}).get("__r", 0)
+            < self._timestamp + DEFAULT_TIMEOUT
         ):
             # Topic is available after timeout
             self._memory[topic] = message | properties
@@ -286,14 +455,14 @@ class Node:
                 else:
                     _retry = min(MAX_RETRIES, _retry + 1)
 
-                timestamp = db.get("__timestamp", 0)
-                rate = db.get("__rate", -1)
+                timestamp = db.get("__t", 0)
+                rate = db.get("__rate", 0)
 
                 # Sleep until the next message
                 if rate > 0 and _retry < MAX_RETRIES:
                     # Try to align the subscription with the publishing rate as much as possible
                     time.sleep(
-                        max(0, 1 / float(rate) - time.time() + timestamp)
+                        max(0, 1 / float(rate) - self._timestamp + timestamp)
                     )
                 else:
                     # If rate is not specified, then sleep for 0.1 second
@@ -307,14 +476,14 @@ class Node:
 
     # endregion
 
-    # region Actions: Service/Client functions
+    # region services: Services: Request/Response functions
 
-    # Actions are specific calls that can be made to the underlying program that runs the node
-    # The actions are registered as a dictionary of key-value pairs
-    # The key is the name of the action
-    # The value is a dictionary of the arguments name and type of the action
-    # Example: Two actions are registered for a node : "move" and "stop"
-    # actions = {
+    # services are specific calls that can be made to the underlying program that runs the node
+    # The services are registered as a dictionary of key-value pairs
+    # The key is the name of the service
+    # The value is a dictionary of the arguments name and type of the service
+    # Example: Two services are registered for a node : "move" and "stop"
+    # services = {
     #     "move": {
     #         "x": ArgumentType.FLOAT,
     #         "y": ArgumentType.FLOAT,
@@ -322,12 +491,12 @@ class Node:
     #     },
     #     "stop": {},
     # }
-    # The available actions for each nodes are registered on the __nodes dictionary under the key "actions" for each node
+    # The available services for each nodes are registered on the __nds dictionary under the key "__s" for each node
     # Example:
-    # __nodes = {
+    # __nds = {
     #     "node_id": {
-    #         "name": "node_name",
-    #         "actions": {
+    #         "__n": "node_name",
+    #         "__s": {
     #             "move": {
     #                 "x": ArgumentType.FLOAT,
     #                 "y": ArgumentType.FLOAT,
@@ -338,153 +507,165 @@ class Node:
     #     },
     # }
 
-    def _setup_actions(
+    def _setup_services(
         self,
         database: Optional[Dict[str, Any]],
     ) -> None:
-        """Register node actions."""
+        """Register node services."""
 
-        # Ensure the __actions buffer is intialized
-        if not "__actions" in self._memory:
-            self._memory["__actions"] = []
+        # Ensure the __srv buffer is intialized
+        if not "__srv" in self._memory:
+            self._memory["__srv"] = []
 
-        if self.actions is not None:
-            self._action_executor.submit(self._listen_action)
+        if self.services is not None:
+            # Initialize a Thread to listen to the services
+            self._service_executor.submit(self._listen_service)
 
-            # format the actions dictionary
-            self._actions_map = {}
-            _actions = {}
-            for action in self.actions.keys():
-                if callable(action):
-                    self._actions_map[action.__name__] = action
-                    _actions[action.__name__] = self.actions[action]
-                elif isinstance(action, str):
+            # format the services dictionary
+            self._services_map = {}
+            _services = {}
+            for service in self.services.keys():
+                if callable(service):
+                    self._services_map[service.__name__] = service
+                    _services[service.__name__] = self.services[service]
+                elif isinstance(service, str):
                     # ? What is the point of this?
-                    self._actions_map[action] = self.actions[action]
-                    _actions[action] = self.actions[action]
+                    self._services_map[service] = self.services[service]
+                    _services[service] = self.services[service]
                 else:
                     raise TypeError(
-                        f"Action {action} is not a string or a function."
+                        f"service {service} is not a string or a function."
                     )
 
-            # Inform the memory of the actions available for this node
-            if database is None:
-                db = self._memory.get("__nodes", default={})
-            else:
-                db = database
-            db[self.node_id]["actions"] = _actions
-            if database is None:
-                self._memory["__nodes"] = db
+            # Inform the memory of the services available for this node
+            db = (
+                self._memory.get("__nds", default={})
+                if database is None
+                else database
+            )
 
-    def _listen_action(self) -> None:
-        """Listen to actions."""
-        # Listening and processing actions might take some time
+            if not self.hide_services:
+                # Advertise the services available for this node
+                db[self.node_id]["__s"] = _services
+
+            if database is None:
+                self._memory["__nds"] = db
+
+    def split_services_db(self, db: Dict[str, Any], dst) -> list[Any]:
+        services = db.get("__srv")
+        service_buffer, services = [
+            x for x in services if x["__dst"] == dst
+        ], [x for x in services if x["__dst"] != dst]
+        db["__srv"] = services
+        return service_buffer
+
+    def _listen_service(self) -> None:
+        """Listen to services."""
+        # Listening and processing services might take some time
         # Therefore, to not block the memory, we first need to fetch and remove
-        # all actions directed to this node from the memory, all in a single
-        # operation. Then, we can process the actions
+        # all services directed to this node from the memory, all in a single
+        # operation. Then, we can process the services
 
         while True:
-            action_buffer = []
+            service_buffer = []
 
-            # if not "__actions" in self._memory:
+            # if not "__srv" in self._memory:
             #     continue
 
-            # TODO: Find a way to do this in a single operation (Some sort of atomic operation)
-            # It currently fetch the same actions multiple times
-            # Alternatives! ===================================================
+            # Fetch and remove all services directed to this node from the memory
+            service_buffer = self._memory.process_lambda(
+                self.split_services_db, self.node_id
+            )
 
-            action_buffer = self._memory.split_actions_db(self.node_id)
-
-            # action_buffer = []
-            # remaining_actions = []
-            # for action in self._memory.get('__actions', default=[]):
-            #     # Note: two operations means that other node can acquire the lock in between
-            #     if action["__dst"] == self.node_id:
-            #         action_buffer.append(action)
-            #     else:
-            #         remaining_actions.append(action)
-            # self._memory['__actions'] = remaining_actions
-            # Alternatives! ===================================================
-            # action_buffer = list(
-            #     filter(
-            #         lambda x: x["__dst"] == self.node_id,
-            #         self._memory.get('__actions', default=[]),
-            #     )
-            # )
-            # self._memory['__actions'] = list(
-            #     filter(
-            #         lambda x: x["__dst"] != self.node_id,
-            #         self._memory.get('__actions', default=[]),
-            #     )
-            # )
-            # =================================================================
-            # actions = self._memory.get('__actions', default=[])
-            # action_buffer, self._memory['__actions'] = [
-            #     x for x in actions if x["__dst"] == self.node_id
-            # ], [x for x in actions if x["__dst"] != self.node_id]
-            # =================================================================
-
-            if action_buffer:
+            if service_buffer:
                 logger.debug(
-                    f"Processing {len(action_buffer)} actions for node {self.node_id}:{self.name}:\n\t"
-                    + "\n\t".join([str(_) for _ in action_buffer])
+                    f"Processing {len(service_buffer)} services for node {self.node_id}:{self.name}:\n\t"
+                    + "\n\t".join([str(_) for _ in service_buffer])
                 )
 
-            for action in action_buffer:
-                # Find the appropriate callback for the action
-                # Get the first key in action that does not start with "__"
-                callback = self._actions_map.get(
+            for service in service_buffer:
+                # Find the appropriate callback for the service
+                # Get the first key in service that does not start with "__"
+                callback = self._services_map.get(
                     next(
-                        filter(lambda x: not x.startswith("__"), action.keys())
+                        filter(
+                            lambda x: not x.startswith("__"), service.keys()
+                        )
                     ),
                     None,
                 )
 
                 if callback is None:
-                    # Action is not available
+                    # service is not available
                     continue
                 else:
                     logger.debug(
-                        f"Executing action {action} for node {self.node_id}:{self.name} with callback {callback.__name__}."
+                        f"Executing service {service} for node {self.node_id}:{self.name} with callback {callback.__name__}."
                     )
 
-                    # Execute the action
-                    response = callback(**action[callback.__name__])
+                    # Execute the service
+                    response = callback(**service[callback.__name__])
 
-                    # If the action has a response, then send the response back to the source node
+                    # If the service has a response, then send the response back to the source node
                     if (
                         response is not None
-                        and action.get("__ans", None) is not None
+                        and service.get("__ans", None) is not None
                     ):
-                        self.call_action(
-                            dest_node=action.get("__src"),
-                            action=action.get("__ans"),
+                        self.call_service(
+                            dest_node_id=service.get("__src"),
+                            service=service.get("__ans"),
                             **response,
                         )
 
-            # Sleep for a while before checking for new actions
-            time.sleep(self.action_server_rate)
+            # Sleep for a while before checking for new services
+            time.sleep(self.service_server_rate)
 
-    def call_action(
+    def call_service(
         self,
-        dest_node: str,
-        action: str,
+        dest_node_id: Optional[str] = None,
+        dest_node_name: Optional[str] = None,
+        service: str = None,
         answer: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
-        """Call an action on a node."""
-        # Check if the action is available
-        # We need to check if the node is available first, otherwise the action
-        #  buffer will get congested with inexistent action calls
-        if action in self.list_node_actions(dest_node):
-            # Action is available
+        """Call an service on a node."""
+        # Check if the service is available
+        # We need to check if the node is available first, otherwise the service
+        #  buffer will get congested with inexistent service calls
+        # Note: This fnction used to check if the service was registered on the
+        #  destination node. However, it is now possible to hide services from
+        #  the memory. Therefore, the destination node will be the only one
+        #  responsible for checking if the service is available or not.
+
+        if dest_node_id is None and dest_node_name is None:
+            logger.error(
+                "Either dest_node_id or dest_node_name must be specified."
+            )
+            return
+
+        if dest_node_id is None:
+            dest_node_id = self.find_node_by_name(dest_node_name)
+
+        if dest_node_id in self._memory.get(
+            "__nds", {}
+        ):  # Check if at least one node with the same name exists
+            if not self.is_service_advertised(dest_node_id, service):
+                # service is not available
+                # No need to call the service
+                logger.warning(
+                    f"No service with name {service} has been registered for "
+                    + f"node {dest_node_id} to call. However, the node might "
+                    + "be hiding its services. The call will be made anyway."
+                )
+
+            # service is available
             properties = {
-                "__dst": dest_node,
+                "__dst": dest_node_id,
                 "__src": self.node_id,
-                "__timestamp": time.time(),
+                "__t": self._timestamp,
             }
 
-            # Add the name of the answer action if any
+            # Add the name of the answer service if any
             if answer is not None:
                 if callable(answer):
                     properties["__ans"] = answer.__name__
@@ -492,42 +673,60 @@ class Node:
                     properties["__ans"] = answer
                 else:
                     logger.error(
-                        f"Answer action {answer} is not a string or a function. Answer action will be ignored."
+                        f"Answer service {answer} is not a string or a function. Answer service will be ignored."
                     )
 
-            # db["__actions"] += [{action: kwargs} | properties]
-
-            # Replace any previous call to the same action that has not been executed yet
-            self._memory["__actions"] = [
-                _action
-                for _action in self._memory.get("__actions", [])
+            # Replace any previous call to the same service that has not been executed yet
+            self._memory["__srv"] = [
+                _service
+                for _service in self._memory.get("__srv", [])
                 if not (
-                    _action.get("__dst") == dest_node
-                    and _action.get("__src") == self.node_id
-                    and action in _action.keys()
+                    _service.get("__dst") == dest_node_id
+                    and _service.get("__src") == self.node_id
+                    and service in _service.keys()
                 )
-            ] + [{action: kwargs} | properties]
-            # # Write back to memory
-            # self._memory["__actions"] = db["__actions"]
+            ] + [{service: kwargs} | properties]
 
             logger.debug(
-                f"Called action {action} on node {dest_node}.",
+                f"Called service {service} on node {dest_node_id}.",
             )
         else:
-            # Action is not available
+            # service is not available
             logger.error(
-                f"Action {action} cannot be called on node {dest_node} because it is not available."
+                f"No node with name {dest_node_id} was found to call service {service}."
             )
 
-    def find_node_by_name(self, name: str) -> List[str]:
+    def find_nodes_by_name(self, name: str) -> List[str]:
         """Search for a node by name."""
-        nodes = self._memory.get("__nodes", default={})
-        return [node for node in nodes if nodes[node]["name"] == name]
+        nodes = self._memory.get("__nds", default={})
+        return [node for node in nodes.keys() if nodes[node]["__n"] == name]
 
-    def list_node_actions(self, node_id: str) -> Dict[str, Any]:
-        """List the actions available for a node."""
+    def find_node_by_name(self, name: str) -> Optional[str]:
+        """Search for a node by name."""
+        nodes = self.find_nodes_by_name(name)
+        # Return the first node with the same name
+        return nodes[0] if nodes else None
+
+    def list_node_services(self, node_name: str) -> Dict[str, Any]:
+        """List the services available for a node."""
+        node_id = self.find_node_by_name(node_name)
+        return self._memory.get("__nds", {}).get(node_id, {}).get("__s", {})
+
+    def is_node_advertising_services(self, node_name: str) -> bool:
+        """Check if a node is advertising services."""
+        node_id = self.find_node_by_name(node_name)
         return (
-            self._memory.get("__nodes", {}).get(node_id, {}).get("actions", {})
+            self._memory.get("__nds", {}).get(node_id, {}).get("__s", {}) != {}
+        )
+
+    def is_service_advertised(self, node_id: str, service: str) -> bool:
+        """Check if an service is advertised by a node."""
+        return (
+            self._memory.get("__nds", {})
+            .get(node_id, {})
+            .get("__s", {})
+            .get(service, {})
+            != {}
         )
 
     # endregion
@@ -535,89 +734,18 @@ class Node:
     # region Parameters: Parameter Server functions
     def update_parameters(self, parameters: Dict[str, Any]) -> None:
         """Update node parameters."""
-        db = self._memory.get("__nodes", default={})
+        db = self._memory.get("__nds", default={})
 
         if self.node_id not in db:
             # ! This case might happen if the server had to restart unexpectedly
             return
 
-        db[self.node_id]["parameters"] = parameters
-        self._memory["__nodes"] = db
+        db[self.node_id]["__p"] = parameters
+        self._memory["__nds"] = db
 
     def get_parameters(self, node_id: str) -> Dict[str, Any]:
         """Get node parameters."""
-        db = self._memory.get("__nodes", default={})
-        return db.get(node_id, {}).get("parameters", {})
-
-    # endregion
-
-    # region Centralized cleanup functions
-    # As nodes act as a federated system, it is important to have a decentralized
-    #  cleanup mechanism accross all nodes to avoid memory leaks.
-    # The cleanup mechanism is based on the following assumptions:
-    # 1. All nodes are responsible for cleaning up the shared memory
-    # 2. Every node might get disconnected from the shared memory at any time
-    # 3. Rated topics should be used within their timespan to avoid memory leaks
-    # 4. Topics published only once should be used within a limited timespan to avoid memory leaks
-    # 5. Actions should be executed as soon as possible to avoid memory leaks
-    def _cleanup(self) -> None:
-        """
-        Cleanup the structure periodically.
-        All nodes should call this function periodically to clean up the memory.
-        """
-        while True:
-            logger.debug("Cleaning up memory.")
-
-            # Ensure this node is still registered
-            if self.node_id not in self._memory.get("__nodes", {}):
-                logging.critical(
-                    f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
-                )
-                self._register_node()
-
-            # Cleanup unused topics
-            # TODO: This would require some sort of heartbeat mechanism
-            # self._cleanup_nodes()
-
-            # Cleanup unused topics
-            self._cleanup_topics()
-
-            # Cleanup unused actions
-            self._cleanup_actions()
-
-            # Sleep for a while before cleaning up again
-            time.sleep(DEFAULT_TIMEOUT)
-
-    def _cleanup_topics(self) -> None:
-        """Cleanup unused topics."""
-        # A topic is considered stale if it has not been updated for more than
-        # DEFAULT_TIMEOUT seconds or if the source node is not registered
-        db = self._memory.items()
-        for topic in db.keys():
-            if topic.startswith("__"):
-                # Skip internal data strtuctures
-                continue
-            if (
-                db[topic].get("__timestamp", 0)
-                + 1 / float(db[topic].get("__rate", 0))
-                + DEFAULT_TIMEOUT
-                < time.time()
-            ) or (db[topic].get("__source") not in db.get("__nodes", {})):
-                # Remove the topic
-                logger.debug(f"Removing topic {topic} from the memory.")
-                self._memory.pop(topic)
-
-    def _cleanup_actions(self) -> None:
-        """Cleanup unused actions."""
-        # An action is considered stale if it has not been executed for more than DEFAULT_TIMEOUT seconds
-        db = self._memory.items()
-        db["__actions"] = [
-            _action
-            for _action in db["__actions"]
-            if _action.get("__timestamp", 0) + DEFAULT_TIMEOUT > time.time()
-        ]
-
-        # Rewrite the actions buffer
-        self._memory["__actions"] = db["__actions"]
+        db = self._memory.get("__nds", default={})
+        return db.get(node_id, {}).get("__p", {})
 
     # endregion

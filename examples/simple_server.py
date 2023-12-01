@@ -4,8 +4,9 @@ import os
 import time
 from typing import NoReturn
 
+from custom_logger import setup_logger
+
 from axone.node import Node
-from examples.custom_logger import setup_logger
 
 setup_logger(debug=False)
 
@@ -47,7 +48,7 @@ class SimpleServerNode:
                 self.highest_rate = 1
                 for topic in db.keys():
                     if isinstance(db[topic], dict):
-                        rate = db[topic].get("__rate", 0)
+                        rate = db[topic].get("__r", 0)
                         if rate > self.highest_rate:
                             self.highest_rate = rate
 
