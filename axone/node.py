@@ -362,7 +362,13 @@ class Node:
             if service.get("__t", float('inf')) + DEFAULT_TIMEOUT
             > self._timestamp
         ]
-        db["__srv"] = services
+
+        # If services is empty, then remove the __srv key from the memory
+        if not services:
+            db.pop("__srv")
+        else:
+            # Else, update the __srv key
+            db["__srv"] = services
 
     # endregion
 
@@ -513,10 +519,6 @@ class Node:
     ) -> None:
         """Register node services."""
 
-        # Ensure the __srv buffer is intialized
-        if not "__srv" in self._memory:
-            self._memory["__srv"] = []
-
         if self.services is not None:
             # Initialize a Thread to listen to the services
             self._service_executor.submit(self._listen_service)
@@ -552,11 +554,14 @@ class Node:
                 self._memory["__nds"] = db
 
     def split_services_db(self, db: Dict[str, Any], dst) -> list[Any]:
-        services = db.get("__srv")
+        services = db.get("__srv", [])
         service_buffer, services = [
             x for x in services if x["__dst"] == dst
         ], [x for x in services if x["__dst"] != dst]
-        db["__srv"] = services
+        if services:
+            db["__srv"] = services
+        else:
+            db.pop("__srv")
         return service_buffer
 
     def _listen_service(self) -> None:
@@ -569,53 +574,52 @@ class Node:
         while True:
             service_buffer = []
 
-            # if not "__srv" in self._memory:
-            #     continue
-
-            # Fetch and remove all services directed to this node from the memory
-            service_buffer = self._memory.process_lambda(
-                self.split_services_db, self.node_id
-            )
-
-            if service_buffer:
-                logger.debug(
-                    f"Processing {len(service_buffer)} services for node {self.node_id}:{self.name}:\n\t"
-                    + "\n\t".join([str(_) for _ in service_buffer])
+            if "__srv" in self._memory.keys():
+                # Fetch and remove all services directed to this node from the memory
+                service_buffer = self._memory.process_lambda(
+                    self.split_services_db, self.node_id
                 )
 
-            for service in service_buffer:
-                # Find the appropriate callback for the service
-                # Get the first key in service that does not start with "__"
-                callback = self._services_map.get(
-                    next(
-                        filter(
-                            lambda x: not x.startswith("__"), service.keys()
-                        )
-                    ),
-                    None,
-                )
-
-                if callback is None:
-                    # service is not available
-                    continue
-                else:
+                if service_buffer:
                     logger.debug(
-                        f"Executing service {service} for node {self.node_id}:{self.name} with callback {callback.__name__}."
+                        f"Processing {len(service_buffer)} services for node {self.node_id}:{self.name}:\n\t"
+                        + "\n\t".join([str(_) for _ in service_buffer])
                     )
 
-                    # Execute the service
-                    response = callback(**service[callback.__name__])
+                for service in service_buffer:
+                    # Find the appropriate callback for the service
+                    # Get the first key in service that does not start with "__"
+                    callback = self._services_map.get(
+                        next(
+                            filter(
+                                lambda x: not x.startswith("__"),
+                                service.keys(),
+                            )
+                        ),
+                        None,
+                    )
 
-                    # If the service has a response, then send the response back to the source node
-                    if (
-                        response is not None
-                        and service.get("__ans", None) is not None
-                    ):
-                        self.call_service(
-                            dest_node_id=service.get("__src"),
-                            service=service.get("__ans"),
-                            **response,
+                    if callback is None:
+                        # service is not available
+                        continue
+                    else:
+                        logger.debug(
+                            f"Executing service {service} for node {self.node_id}:{self.name} with callback {callback.__name__}."
                         )
+
+                        # Execute the service
+                        response = callback(**service[callback.__name__])
+
+                        # If the service has a response, then send the response back to the source node
+                        if (
+                            response is not None
+                            and service.get("__ans", None) is not None
+                        ):
+                            self.call_service(
+                                dest_node_id=service.get("__src"),
+                                service=service.get("__ans"),
+                                **response,
+                            )
 
             # Sleep for a while before checking for new services
             time.sleep(self.service_server_rate)
@@ -653,7 +657,7 @@ class Node:
                 # service is not available
                 # No need to call the service
                 logger.warning(
-                    f"No service with name {service} has been registered for "
+                    f"No service with name {service} has been advertised by "
                     + f"node {dest_node_id} to call. However, the node might "
                     + "be hiding its services. The call will be made anyway."
                 )
