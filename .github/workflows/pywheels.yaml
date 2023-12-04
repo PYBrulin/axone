@@ -1,6 +1,6 @@
 name: Build
 
-on: 
+on:
   push:
     branches:
       - main
@@ -20,6 +20,7 @@ jobs:
 
       # Note: This step will overwrite the current version.py contained in this repository to keep it up-to-date during the build
       - name: Retrieve version from git tags
+        id: version
         run: |
           echo "TAG_NAME=$(git describe --match "v*" --tags)" >> $GITHUB_OUTPUT
 
@@ -52,5 +53,6 @@ jobs:
         if: "startsWith(github.ref, 'refs/tags/v')"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
           title: "Release ${{ steps.version.outputs.TAG_NAME }}"
           files: ./dist/*.whl
