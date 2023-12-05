@@ -56,7 +56,6 @@ class ConfigFileNode:
             pass
         finally:
             self.node._memory.shm.close()
-            self.node._memory.shm.unlink()  # Call unlink only once to release the shared memory
             del self.node
 
 

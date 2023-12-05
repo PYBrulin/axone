@@ -215,16 +215,17 @@ class CmdLine:
     def node_info(self, *args) -> None:
         args = args[0]
 
-        if len(args) == 0:
+        if len(args) != 0:
             node = self.node._memory.get("__nds", {})[self.node.node_id]
-        elif args[0] in self.node._memory.get("__nds", {}):
             _nodes = self.node.find_node_by_name(args[0])
-            if not _nodes:
+            if _nodes is None:
                 print(f"Unknown node '{args[0]}'")
                 return
-            node = _nodes[0]
+            node = self.node._memory.get("__nds", {})[_nodes]
         else:
-            print(f"Unknown node '{args[0]}'")
+            print(
+                "Not enough arguments to call node info command. Usage: node info <node_name>"
+            )
             return
 
         for key, value in node.items():
@@ -417,7 +418,52 @@ class CmdLine:
                 print(f"{key:20s} : {value}")
 
     def service_call(self, *args) -> None:
-        print('Not implemented.')
+        """
+        This method all passing a destination_node, a service_name and a dictionnary to call a service.
+        Note that this node does not allow to receive answers from the service.
+
+        Call to this function should be done as follow:
+        service call destination_node service_name={key1:value1, key2:value2, key3:value3}
+        """
+
+        # Get the arguments
+        args = args[0]
+        print(args)
+
+        # Check if the arguments are correct
+        if len(args) == 0:
+            print("Missing arguments")
+            return
+
+        # Get the destination node
+        destination_node = args[0]
+        destination_node_id = self.node.find_node_by_name(destination_node)
+        if destination_node_id is None:
+            print(f"Unknown node '{args[0]}'")
+            return
+        destination_node = self.node._memory.get("__nds", {})[
+            destination_node_id
+        ]
+
+        # Get the service name and arguments
+        service_name, service_args = args[1].split("=", 1)
+        print(
+            f"Calling service '{service_name}' on node '{destination_node}' with arguments '{service_args}'"
+        )
+
+        # Check if the service has been advertised by the destination node
+        if service_name not in destination_node.get("__s", {}):
+            print(
+                f"Service '{service_name}' is not registered on node '{destination_node}'. "
+                + "But it will be called anyway."
+            )
+
+        # Call the service
+        self.node.call_service(
+            dest_node_id=destination_node_id,
+            service=service_name,
+            **json.loads(service_args),
+        )
 
     # endregion
 
@@ -512,7 +558,6 @@ class CmdLine:
             exit(0)
         finally:
             self.node._memory.shm.close()
-            self.node._memory.shm.unlink()  # Call unlink only once to release the shared memory
             del self.node
 
 

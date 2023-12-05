@@ -241,7 +241,7 @@ class Node:
 
         # Restart the node
         self._memory.shm.close()
-        self._memory.shm.unlink()  # Call unlink only once to release the shared memory
+        # self._memory.shm.unlink()  # Call unlink only once to release the shared memory
 
         # Reinitialize the node
         self.__init__(**self.kwargs)  # ?
@@ -271,7 +271,9 @@ class Node:
             7. Nodes should be removed from the memory if they are not updated
                 within a certain timespan to avoid memory leaks
         """
-        cleanup_time = self._timestamp + DEFAULT_TIMEOUT
+        cleanup_time = 0  # The time at which the memory was last cleaned up.
+        # Setting it to 0 will force the memory to be cleaned up instantly on
+        # the first iteration of the loop
         while True:
             # Update the heartbeat in the Node structure
             self._memory.modify_structure(
