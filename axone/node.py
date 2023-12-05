@@ -9,7 +9,6 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from .shared_memory_dict import SharedMemoryDict
 
-logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 5
 MAX_RETRIES = 10
 TIMESTAMP_PRECISION = 3
@@ -17,6 +16,8 @@ TIMESTAMP_RANGE = 60 * 60 * 24 * 365  # 1 year
 
 
 class Node:
+    logger = logging.getLogger(__name__)
+
     def __init__(self, name: str, **kwargs) -> None:
         """Initialize a node for the Axone framework.
 
@@ -212,14 +213,14 @@ class Node:
 
         # Register node within __nds if not already registered
         while self.node_id in self._memory.get("__nds", default={}):
-            logger.warning(
+            self.logger.warning(
                 f"Node {self.node_id} already registered on the memory."
             )
             self._node_id = self._get_node_id()
 
         _db = self._memory.get("__nds", default={})
 
-        logger.info(f"Registering node {self.node_id} on the memory.")
+        self.logger.info(f"Registering node {self.node_id} on the memory.")
         _db[self.node_id] = {
             "__n": self.name,
             "__t": self._timestamp,
@@ -237,14 +238,21 @@ class Node:
 
     def restart(self) -> None:
         """Restart the node."""
-        logger.info(f"Restarting node {self.node_id}:{self.name}.")
+        self.logger.info(f"Restarting node {self.node_id}:{self.name}.")
 
         # Restart the node
-        self._memory.shm.close()
+        self._memory.shm.close()  # Close connection to the shared memory for this node only
         # self._memory.shm.unlink()  # Call unlink only once to release the shared memory
 
         # Reinitialize the node
         self.__init__(**self.kwargs)  # ?
+
+    def shutdown(self) -> None:
+        """Restart the node."""
+        self.logger.info(f"Stopping node {self.node_id}:{self.name}.")
+
+        # Close connection to the shared memory for this node only
+        self._memory.shm.close()
 
     # region Federated server functions
 
@@ -281,14 +289,14 @@ class Node:
                 self._timestamp,
             )
 
-            logger.debug(
+            self.logger.debug(
                 f"Updating heartbeat for node {self.node_id}:{self.name}."
             )
 
             if self._timestamp > cleanup_time:
                 cleanup_time = self._timestamp + DEFAULT_TIMEOUT
 
-                logger.debug("Cleaning up memory.")
+                self.logger.debug("Cleaning up memory.")
 
                 # Ensure this node is still registered
                 if self.node_id not in self._memory.get("__nds", {}):
@@ -341,7 +349,7 @@ class Node:
                 < self._timestamp
             ):
                 # Remove the topic
-                logger.debug(f"Removing topic {topic} from the memory.")
+                self.logger.debug(f"Removing topic {topic} from the memory.")
                 to_remove.append(topic)
         for topic in to_remove:
             db.pop(topic)
@@ -412,7 +420,7 @@ class Node:
             self._memory[topic] = message | properties
         else:
             # Topic is not available
-            logger.error(
+            self.logger.error(
                 f"Topic {topic} is not available for node {self.node_id}:{self.name} to publish."
             )
 
@@ -478,7 +486,7 @@ class Node:
 
             else:  # No topic with this name is available
                 pass
-                # logger.error(
+                # self.logger.error(
                 #     f"No topic with name {topic} has been puclished for node {self.node_id}:{self.name} to subscribe."
                 # )
 
@@ -583,7 +591,7 @@ class Node:
                 )
 
                 if service_buffer:
-                    logger.debug(
+                    self.logger.debug(
                         f"Processing {len(service_buffer)} services for node {self.node_id}:{self.name}:\n\t"
                         + "\n\t".join([str(_) for _ in service_buffer])
                     )
@@ -605,7 +613,7 @@ class Node:
                         # service is not available
                         continue
                     else:
-                        logger.debug(
+                        self.logger.debug(
                             f"Executing service {service} for node {self.node_id}:{self.name} with callback {callback.__name__}."
                         )
 
@@ -644,7 +652,7 @@ class Node:
         #  responsible for checking if the service is available or not.
 
         if dest_node_id is None and dest_node_name is None:
-            logger.error(
+            self.logger.error(
                 "Either dest_node_id or dest_node_name must be specified."
             )
             return
@@ -658,7 +666,7 @@ class Node:
             if not self.is_service_advertised(dest_node_id, service):
                 # service is not available
                 # No need to call the service
-                logger.warning(
+                self.logger.warning(
                     f"No service with name {service} has been advertised by "
                     + f"node {dest_node_id} to call. However, the node might "
                     + "be hiding its services. The call will be made anyway."
@@ -678,7 +686,7 @@ class Node:
                 elif isinstance(answer, str):
                     properties["__ans"] = answer
                 else:
-                    logger.error(
+                    self.logger.error(
                         f"Answer service {answer} is not a string or a function. Answer service will be ignored."
                     )
 
@@ -693,12 +701,12 @@ class Node:
                 )
             ] + [{service: kwargs} | properties]
 
-            logger.debug(
+            self.logger.debug(
                 f"Called service {service} on node {dest_node_id}.",
             )
         else:
             # service is not available
-            logger.error(
+            self.logger.error(
                 f"No node with name {dest_node_id} was found to call service {service}."
             )
 
