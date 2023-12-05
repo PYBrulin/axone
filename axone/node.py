@@ -611,26 +611,33 @@ class Node:
 
                     if callback is None:
                         # service is not available
+                        self.logger.warning(
+                            f"Service {service} was called to this node from {service.get('__src')}, but the service is not available."
+                        )
                         continue
                     else:
                         self.logger.debug(
                             f"Executing service {service} for node {self.node_id}:{self.name} with callback {callback.__name__}."
                         )
 
-                        # Execute the service
-                        response = callback(**service[callback.__name__])
+                        try:
+                            # Execute the service
+                            response = callback(**service[callback.__name__])
 
-                        # If the service has a response, then send the response back to the source node
-                        if (
-                            response is not None
-                            and service.get("__ans", None) is not None
-                        ):
-                            self.call_service(
-                                dest_node_id=service.get("__src"),
-                                service=service.get("__ans"),
-                                **response,
+                            # If the service has a response, then send the response back to the source node
+                            if (
+                                response is not None
+                                and service.get("__ans", None) is not None
+                            ):
+                                self.call_service(
+                                    dest_node_id=service.get("__src"),
+                                    service=service.get("__ans"),
+                                    **response,
+                                )
+                        except Exception as e:
+                            self.logger.error(
+                                f"Callback occured when running callback {service} with arguments {service[callback.__name__]}:\n{e}"
                             )
-
             # Sleep for a while before checking for new services
             time.sleep(self.service_server_rate)
 
