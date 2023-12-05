@@ -44,11 +44,13 @@ int main(int argc, char *argv[])
         // std::cout << obj << std::endl;
 
         // Try to iterate over the nodes and display their names
-        std::cout << "Nodes: " << std::endl;
-        for (auto &node : obj["__nds"].ObjectRange())
-        {
-            std::cout << node.first << " : " << node.second["__n"] << std::endl;
-        }
+        // std::cout << "Nodes: " << std::endl;
+        // for (auto &node : obj["__nds"].ObjectRange())
+        // {
+        //     std::cout << node.first << " : " << node.second["__n"] << std::endl;
+        // }
+
+        std::cout << "Node ID: " << axone_node.find_node_id_by_name(obj, "example_publisher") << " for node example_publisher" << std::endl;
 
         std::cout << "Services: " << std::endl;
         for (auto &service : obj["__srv"].ArrayRange())

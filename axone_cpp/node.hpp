@@ -81,6 +81,23 @@ public:
             releaseLock(fd, lockName);
             return obj;
         }
+        return JSON::Load("{}"); // Return an empty JSON object
     }
+
+    // Find a node by name
+    std::string find_node_id_by_name(JSON obj, const std::string &name)
+    {
+
+        for (auto &node : obj["__nds"].ObjectRange())
+        {
+            if (node.second["__n"].ToString() == name)
+            {
+                return node.first;
+            }
+        }
+
+        return "";
+    }
+
 
 };
