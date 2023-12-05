@@ -47,7 +47,7 @@ class ExampleNodePerformer:
             memory_size=4096,
             parameters=self.parameters,
             services=services,
-            hide_services=True,
+            # hide_services=True,
         )
 
     # region service callbacks
@@ -91,7 +91,6 @@ class ExampleNodePerformer:
             pass
         finally:
             self.node._memory.shm.close()
-            self.node._memory.shm.unlink()  # Call unlink only once to release the shared memory
             del self.node
 
 

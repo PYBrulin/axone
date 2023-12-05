@@ -3,6 +3,7 @@ import os
 import sys
 from contextlib import contextmanager
 from functools import wraps
+from multiprocessing import resource_tracker
 from multiprocessing.shared_memory import SharedMemory
 from typing import (
     Any,
@@ -73,7 +74,6 @@ class SharedMemoryDict:
             f"sm_{name}", size
         )
         self._ensure_memory_initialization()
-
         self._size = 0
 
     @property
@@ -81,10 +81,10 @@ class SharedMemoryDict:
         return self._size
 
     def _ensure_memory_initialization(self):
-        memory_is_empty = (
+        memory_is_not_empty = (
             bytes(self._memory_block.buf).split(NULL_BYTE, 1)[0] == b""
         )
-        if memory_is_empty:
+        if memory_is_not_empty:
             self._save_memory({})
 
     def cleanup(self) -> None:
@@ -209,10 +209,57 @@ class SharedMemoryDict:
         with self._modify_db() as db:
             return db.setdefault(key, default)
 
+    def _remove_shm_from_resource_tracker(self, name: str) -> None:
+        """
+        Overwrite the register and unregister functions of the resource_tracker
+        to avoid registering the shared memory block with the resource_tracker
+
+        Calls unregister to avoid resource_tracker.py from cleaning up
+        the shared memory block when this process exits
+        This is necessary because the shared memory block is not
+        created by the resource_tracker.py itself but by the
+        SharedMemoryDict class
+
+        Important note: This intentionally cause memory leaks when the last
+        process is killed without calling cleanup().
+        This is required on linux system otherwise, the memory will get cleaned
+        regardless if other processes are still using it or not.
+
+        More details at: https://bugs.python.org/issue38119
+                         https://stackoverflow.com/a/73885467
+        """
+
+        # TODO: Implementing our own resource_tracker.py would be better
+        # TODO: than overwriting the functions. We need to clean both the
+        # TODO: shared_memory and the lock as well.
+
+        def fix_register(name, rtype):
+            if rtype == "shared_memory":
+                return
+            return resource_tracker._resource_tracker.register(
+                self, name, rtype
+            )
+
+        resource_tracker.register = fix_register
+
+        def fix_unregister(name, rtype):
+            if rtype == "shared_memory":
+                return
+            return resource_tracker._resource_tracker.unregister(
+                self, name, rtype
+            )
+
+        resource_tracker.unregister = fix_unregister
+
+        if "shared_memory" in resource_tracker._CLEANUP_FUNCS:
+            del resource_tracker._CLEANUP_FUNCS["shared_memory"]
+
     def _get_or_create_memory_block(
         self, name: str, size: int
     ) -> SharedMemory:
         """Get or create shared memory block"""
+
+        self._remove_shm_from_resource_tracker(name)
         try:
             self.check_security(name)
             return SharedMemory(name=name)
