@@ -3,11 +3,14 @@
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <fcntl.h>
-#include <jsoncpp/json/json.h>
+// #include <jsoncpp/json/json.h>
+#include "json.hpp"
 #include <fstream>
 #include <thread>
 #include <chrono>
 #include <unistd.h>
+
+using json::JSON;
 
 /*! Try to get lock. Return its file descriptor or -1 if failed.
  *
@@ -40,26 +43,27 @@ void releaseLock(int fd, char const *lockName)
     close(fd);
 }
 
-Json::Value readJsonFile(const std::string &filename)
+// Json::Value
+JSON readJsonFile(const std::string &filename)
 {
     std::ifstream file(filename, std::ifstream::binary);
     if (!file.is_open())
     {
         std::cerr << "Error: Unable to open file " << filename << std::endl;
-        return Json::Value();
+        return JSON::Load("{}"); // Empty JSON object
     }
 
-    Json::Value root;
-    Json::CharReaderBuilder builder;
-    std::string errs;
+    // Get the content of the file
+    std::string content((std::istreambuf_iterator<char>(file)),
+                        (std::istreambuf_iterator<char>()));
 
-    if (!Json::parseFromStream(builder, file, &root, &errs))
-    {
-        std::cerr << "Error: Unable to parse JSON from file " << filename << ": " << errs << std::endl;
-        return Json::Value();
-    }
+    // std::cout << "Content: " << content << std::endl;
 
-    return root;
+    // Parse the content
+    // TODO: Use the stream directly instead of copying the content?
+    JSON obj = JSON::Load(content);
+
+    return obj;
 }
 
 int main(int argc, char *argv[])
@@ -76,38 +80,63 @@ int main(int argc, char *argv[])
     const char *lockName = result.c_str();
 
     const std::string jsonFilename = "/dev/shm/sm_" + memoryName;
-    const int readRateSeconds = 1;
+    const int readRateHertz = 5;
 
     while (true)
     {
         int fd = tryGetLock(lockName);
         if (fd != -1)
         {
-            Json::Value jsonData = readJsonFile(jsonFilename);
-
             // Clear the terminal before displaying the data
             std::cout << "\033[2J\033[1;1H";
 
-            // Display the data
-            std::cout << "Data: " << std::endl;
+            // Json::Value jsonData =
+            JSON obj = readJsonFile(jsonFilename);
 
-            Json::StreamWriterBuilder builder;
-            builder["commentStyle"] = "None";
-            builder["indentation"] = "    "; // remove indentation
-            builder["colonSymbol"] = ":";    // set colon separator
-            builder["commaSymbol"] = ",";    // set comma separator
-            std::unique_ptr<Json::StreamWriter> writer(
-                builder.newStreamWriter());
-            writer->write(jsonData, &std::cout);
-            std::cout << std::endl; // add lf and flush
+            // // Display the data
+            // std::cout << "Data: " << std::endl;
+            // std::cout << obj << std::endl;
 
-            // std::cout << out << std::endl;
+            // Try to iterate over the nodes and display their names
+            std::cout << "Nodes: " << std::endl;
+            for (auto &node : obj["__nds"].ObjectRange())
+            {
+                std::cout << node.first << " : " << node.second["__n"] << std::endl;
+            }
+
+            std::cout << "Services: " << std::endl;
+            for (auto &service : obj["__srv"].ArrayRange())
+            {
+                std::cout << service["__dst"] << " -> " << service["__dst"] << ": ";
+                for (auto &property :service.ObjectRange())
+                {
+                    // if start with __, it's a special property
+                    if (property.first.find("__") == 0)
+                        continue;
+                    // std::cout << property.first << " : " << property.second << std::endl;
+                    std::cout << property.first << std::endl;
+                }
+            }
+
+            std::cout << "Topics: " << std::endl;
+            for (auto &topic : obj.ObjectRange())
+            {
+                // if start with __, it's a special property
+                if (topic.first.find("__") == 0)
+                    continue;
+                std::cout << topic.first << " ("<< topic.second["__r"] << " Hz)" << std::endl;
+            }
+
+
+            // Save the object to a local file
+            std::ofstream file("data.json");
+            file << obj.dump(1, "", ",", ":", false);
+            file.close();
 
             releaseLock(fd, lockName);
         }
 
-        std::this_thread::sleep_for(std::chrono::seconds(readRateSeconds));
+        // Wait for the next iteration
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000 / readRateHertz));
     }
-
-    return 0;
 }
