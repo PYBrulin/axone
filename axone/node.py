@@ -96,22 +96,17 @@ class Node:
         # Generate a unique node id
         self._node_id = self._get_node_id()
 
+        self._subscriptions = {}
+
         self._services_map = {}
-
-        # Initialize a Thread to listen to the memory events
-        self._executor = ThreadPoolExecutor(max_workers=10)
-        self._executor.submit(self._listen)
-
-        # Initialize a Thread to listen to the services
-        if self.services is not None:
-            self._service_executor = ThreadPoolExecutor(max_workers=1)
 
         # Register node on the memory
         self._register_node()
 
+        # Initialize a Thread to listen to the memory events
         # Initialize a Thread to cleanup the memory periodically
-        self._federated_executor = ThreadPoolExecutor(max_workers=1)
-        self._federated_executor.submit(self._federated_server)
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._executor.submit(self._federated_server)
 
     @property
     def node_id(self) -> str:
@@ -161,6 +156,22 @@ class Node:
         """Set the node parameters."""
         self._parameters = parameters
         self.kwargs["parameters"] = parameters
+
+    @property
+    def subscription_server_rate(self) -> List[float]:
+        """Return the subscription server rate."""
+        return self._subscription_server_rate
+
+    @property
+    def subscriptions(self) -> Optional[Dict[str, Any]]:
+        """Return the node subscriptions dictionnary containing the topics as keys and the callbacks as values."""
+        return self._subscriptions
+
+    @subscriptions.setter
+    def subscriptions(self, subscriptions: Optional[Dict[str, Any]]) -> None:
+        """Set the node subscriptions."""
+        self._subscriptions = subscriptions
+        self.kwargs["subscriptions"] = subscriptions
 
     @property
     def services(self) -> Optional[Dict[str, Any]]:
@@ -279,43 +290,70 @@ class Node:
             7. Nodes should be removed from the memory if they are not updated
                 within a certain timespan to avoid memory leaks
         """
-        cleanup_time = 0  # The time at which the memory was last cleaned up.
+        _iter_time = time.time()
+
+        _last_federation_time = (
+            0  # The time at which the memory was last federated.
+        )
+        _last_services_time = (
+            0  # The time at which the services were last checked.
+        )
+        _last_subscription_time = {}
+
+        _cleanup_time = 0  # The time at which the memory was last cleaned up.
         # Setting it to 0 will force the memory to be cleaned up instantly on
         # the first iteration of the loop
         while True:
-            # Update the heartbeat in the Node structure
-            self._memory.modify_structure(
-                ["__nds", self.node_id, "__t"],
-                self._timestamp,
-            )
+            if time.time() - _last_federation_time > 1:
+                _last_federation_time = time.time()
 
-            self.logger.debug(
-                f"Updating heartbeat for node {self.node_id}:{self.name}."
-            )
+                # Update the heartbeat in the Node structure
+                self._memory.modify_structure(
+                    ["__nds", self.node_id, "__t"],
+                    self._timestamp,
+                )
 
-            if self._timestamp > cleanup_time:
-                cleanup_time = self._timestamp + DEFAULT_TIMEOUT
+                self.logger.debug(
+                    f"Updating heartbeat for node {self.node_id}:{self.name}."
+                )
 
-                self.logger.debug("Cleaning up memory.")
+                if self._timestamp > _cleanup_time:
+                    _cleanup_time = self._timestamp + DEFAULT_TIMEOUT
 
-                # Ensure this node is still registered
-                if self.node_id not in self._memory.get("__nds", {}):
-                    logging.critical(
-                        f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
-                    )
-                    self._register_node()
+                    self.logger.debug("Cleaning up memory.")
 
-                # Cleanup unused topics
-                self._memory.process_lambda(self._clear_stale_nodes)
+                    # Ensure this node is still registered
+                    if self.node_id not in self._memory.get("__nds", {}):
+                        logging.critical(
+                            f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
+                        )
+                        self._register_node()
 
-                # Cleanup unused topics
-                self._memory.process_lambda(self._clear_stale_topics)
+                    # Cleanup unused topics
+                    self._memory.process_lambda(self._clear_stale_nodes)
 
-                # Cleanup unused services
-                self._memory.process_lambda(self._clear_stale_services)
+                    # Cleanup unused topics
+                    self._memory.process_lambda(self._clear_stale_topics)
 
-            # Send the heartbeat every second
-            time.sleep(1)
+                    # Cleanup unused services
+                    self._memory.process_lambda(self._clear_stale_services)
+
+            if self.services is not None:
+                if (
+                    time.time() - _last_services_time
+                    > self.service_server_rate
+                ):
+                    self._listen_service()
+                    _last_services_time = time.time()
+
+            if self.subscriptions:
+                for topic in self.subscriptions:
+                    if (
+                        time.time() - _last_subscription_time.get(topic, 0)
+                        > self.subscription_server_rate[topic]
+                    ):
+                        self._listen_subscription(topic)
+                        _last_subscription_time[topic] = time.time()
 
     def _clear_stale_nodes(self, db: Dict[str, Any]) -> None:
         """
@@ -424,9 +462,7 @@ class Node:
                 f"Topic {topic} is not available for node {self.node_id}:{self.name} to publish."
             )
 
-    def register_publish(
-        self, topic: str, message: Any, rate: float = 0
-    ) -> None:
+    def publish_rate(self, topic: str, message: Any, rate: float = 0) -> None:
         """Publish a message on a topic."""
         logging.debug("Registering publisher", topic, message, rate)
         # Initialize a Thread to publish to the topic periodically
@@ -451,10 +487,17 @@ class Node:
     # endregion
 
     # region Subscriber functions
-    def register_subscribe(self, topic: str, callback: Callable) -> None:
+    def subscribe(self, topic: str, callback: Callable) -> None:
         """Subscribe to a topic."""
-        # Initialize a Thread to listen to the topic periodically
-        self._executor.submit(self._listen, topic, callback)
+        # Add the callback to the list of callbacks for this topic
+        if topic not in self.subscriptions:
+            self.subscriptions[topic] = {
+                "rate": -1,
+                "last_message": None,
+                "callbacks": [callback],
+            }
+        else:
+            self.subscriptions[topic]["callbacks"].append(callback)
 
     def _listen(self, topic: str, callback: Callable) -> None:
         """Listen to a topic."""
@@ -580,66 +623,62 @@ class Node:
         # Therefore, to not block the memory, we first need to fetch and remove
         # all services directed to this node from the memory, all in a single
         # operation. Then, we can process the services
+        service_buffer = []
 
-        while True:
-            service_buffer = []
+        if "__srv" in self._memory.keys():
+            # Fetch and remove all services directed to this node from the memory
+            service_buffer = self._memory.process_lambda(
+                self.split_services_db, self.node_id
+            )
 
-            if "__srv" in self._memory.keys():
-                # Fetch and remove all services directed to this node from the memory
-                service_buffer = self._memory.process_lambda(
-                    self.split_services_db, self.node_id
+            if service_buffer:
+                self.logger.debug(
+                    f"Processing {len(service_buffer)} services for node {self.node_id}:{self.name}:\n\t"
+                    + "\n\t".join([str(_) for _ in service_buffer])
                 )
 
-                if service_buffer:
+            for service in service_buffer:
+                # Find the appropriate callback for the service
+                # Get the first key in service that does not start with "__"
+                callback = self._services_map.get(
+                    next(
+                        filter(
+                            lambda x: not x.startswith("__"),
+                            service.keys(),
+                        )
+                    ),
+                    None,
+                )
+
+                if callback is None:
+                    # service is not available
+                    self.logger.warning(
+                        f"Service {service} was called to this node from {service.get('__src')}, but the service is not available."
+                    )
+                    continue
+                else:
                     self.logger.debug(
-                        f"Processing {len(service_buffer)} services for node {self.node_id}:{self.name}:\n\t"
-                        + "\n\t".join([str(_) for _ in service_buffer])
+                        f"Executing service {service} for node {self.node_id}:{self.name} with callback {callback.__name__}."
                     )
 
-                for service in service_buffer:
-                    # Find the appropriate callback for the service
-                    # Get the first key in service that does not start with "__"
-                    callback = self._services_map.get(
-                        next(
-                            filter(
-                                lambda x: not x.startswith("__"),
-                                service.keys(),
+                    try:
+                        # Execute the service
+                        response = callback(**service[callback.__name__])
+
+                        # If the service has a response, then send the response back to the source node
+                        if (
+                            response is not None
+                            and service.get("__ans", None) is not None
+                        ):
+                            self.call_service(
+                                dest_node_id=service.get("__src"),
+                                service=service.get("__ans"),
+                                **response,
                             )
-                        ),
-                        None,
-                    )
-
-                    if callback is None:
-                        # service is not available
-                        self.logger.warning(
-                            f"Service {service} was called to this node from {service.get('__src')}, but the service is not available."
+                    except Exception as e:
+                        self.logger.error(
+                            f"Callback occured when running callback {service} with arguments {service[callback.__name__]}:\n{e}"
                         )
-                        continue
-                    else:
-                        self.logger.debug(
-                            f"Executing service {service} for node {self.node_id}:{self.name} with callback {callback.__name__}."
-                        )
-
-                        try:
-                            # Execute the service
-                            response = callback(**service[callback.__name__])
-
-                            # If the service has a response, then send the response back to the source node
-                            if (
-                                response is not None
-                                and service.get("__ans", None) is not None
-                            ):
-                                self.call_service(
-                                    dest_node_id=service.get("__src"),
-                                    service=service.get("__ans"),
-                                    **response,
-                                )
-                        except Exception as e:
-                            self.logger.error(
-                                f"Callback occured when running callback {service} with arguments {service[callback.__name__]}:\n{e}"
-                            )
-            # Sleep for a while before checking for new services
-            time.sleep(self.service_server_rate)
 
     def call_service(
         self,

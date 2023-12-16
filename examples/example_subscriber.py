@@ -35,13 +35,9 @@ class ExampleNodeSubscriber:
 
     def run(self) -> NoReturn:
         try:
-            self.node.register_subscribe(
-                "topic_published_once", callback=self.print
-            )
-            self.node.register_subscribe(
-                "topic_published_rate", callback=self.print
-            )
-            self.node.register_subscribe(
+            self.node.subscribe("topic_published_once", callback=self.print)
+            self.node.subscribe("topic_published_rate", callback=self.print)
+            self.node.subscribe(
                 "topic_published_rate_func", callback=self.print
             )
             while True:
