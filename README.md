@@ -126,7 +126,7 @@ classDiagram
     example_publisher --> example_subscriber : topic_published_rate_func\n(rate = 2 Hz)
 ```
 
-A publisher can be created using the `register_publish` or `publish_once` method of a node. The method takes the name of the topic to publish to, and the data to publish. It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a JSON-serializable object as the message.
+A publisher can be created using the `publish_rate` or `publish_once` method of a node. The method takes the name of the topic to publish to, and the data to publish. It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a JSON-serializable object as the message.
 
 ```python
 from axone.node import Node
@@ -144,14 +144,14 @@ node.publish_once(
 def callable_function(self) -> None:
     return {"message": f"Hello world!"}  # Must return a dictionary
 
-node.register_publish(
+node.publish_rate(
     "topic_published_rate_func",
     message=callable_function,
     rate=2,
 )
 ```
 
-A subscriber can be created using the `register_subscribe` method of a node. The method takes the name of the topic to subscribe to, and a callable callback function that will be called when a message is received. The callback function must take a single argument, which will be the received message. Parsing of the message should be handled by the callback function.
+A subscriber can be created using the `subscribe` method of a node. The method takes the name of the topic to subscribe to, and a callable callback function that will be called when a message is received. The callback function must take a single argument, which will be the received message. Parsing of the message should be handled by the callback function.
 
 ```python
 from axone.node import Node
@@ -166,7 +166,7 @@ def callback(message):
     print(f"Raw object: {message}")
     print(f"Data within: {message.get('data')}")
 
-node.register_subscribe("topic_published_once", callback=callback)
+node.subscribe("topic_published_once", callback=callback)
 ```
 
 ### Service: Request/Response

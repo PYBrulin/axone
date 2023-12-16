@@ -38,14 +38,14 @@ class ExampleNodePublisher:
     def run(self) -> NoReturn:
         try:
             # Register a rated publisher
-            self.node.register_publish(
+            self.node.publish_rate(
                 "topic_published_rate",
                 message={"message": f"Hello from topic_published_rate"},
                 rate=3,
             )
 
             # Register a rated publisher from a callback function
-            self.node.register_publish(
+            self.node.publish_rate(
                 "topic_published_rate_func",
                 message=self.publish_actualization,
                 rate=2,
