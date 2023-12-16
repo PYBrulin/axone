@@ -297,8 +297,6 @@ class Node:
             7. Nodes should be removed from the memory if they are not updated
                 within a certain timespan to avoid memory leaks
         """
-        _iter_time = time.time()
-
         _last_federation_time = (
             0  # The time at which the memory was last federated.
         )
@@ -311,90 +309,102 @@ class Node:
         # Setting it to 0 will force the memory to be cleaned up instantly on
         # the first iteration of the loop
         while True:
-            if time.time() - _last_federation_time > 1:
-                _last_federation_time = time.time()
+            try:
+                if time.time() - _last_federation_time > 1:
+                    _last_federation_time = time.time()
 
-                # Update the heartbeat in the Node structure
-                self._memory.modify_structure(
-                    ["__nds", self.node_id, "__t"],
-                    self._timestamp,
-                )
+                    # Update the heartbeat in the Node structure
+                    self._memory.modify_structure(
+                        ["__nds", self.node_id, "__t"],
+                        self._timestamp,
+                    )
 
-                self.logger.debug(
-                    f"Updating heartbeat for node {self.node_id}:{self.name}."
-                )
+                    self.logger.debug(
+                        f"Updating heartbeat for node {self.node_id}:{self.name}."
+                    )
 
-                if self._timestamp > _cleanup_time:
-                    _cleanup_time = self._timestamp + DEFAULT_TIMEOUT
+                    if self._timestamp > _cleanup_time:
+                        _cleanup_time = self._timestamp + DEFAULT_TIMEOUT
 
-                    self.logger.debug("Cleaning up memory.")
+                        self.logger.debug("Cleaning up memory.")
 
-                    # Ensure this node is still registered
-                    if self.node_id not in self._memory.get("__nds", {}):
-                        logging.critical(
-                            f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
-                        )
-                        self._register_node()
+                        # Ensure this node is still registered
+                        if self.node_id not in self._memory.get("__nds", {}):
+                            logging.critical(
+                                f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
+                            )
+                            self._register_node()
 
-                    # Cleanup unused topics
-                    self._memory.process_lambda(self._clear_stale_nodes)
+                        # Cleanup unused topics
+                        self._memory.process_lambda(self._clear_stale_nodes)
 
-                    # Cleanup unused topics
-                    self._memory.process_lambda(self._clear_stale_topics)
+                        # Cleanup unused topics
+                        self._memory.process_lambda(self._clear_stale_topics)
 
-                    # Cleanup unused services
-                    self._memory.process_lambda(self._clear_stale_services)
+                        # Cleanup unused services
+                        self._memory.process_lambda(self._clear_stale_services)
 
-            if self.services is not None:
-                if (
-                    time.time() - _last_services_time
-                    > self.service_server_rate
-                ):
-                    self._listen_service()
-                    _last_services_time = time.time()
-
-            if self.subscriptions:
-                for topic in self.subscriptions:
+                if self.services is not None:
                     if (
-                        time.time() - _last_subscription_time.get(topic, 0)
-                        > self.subscriptions[topic]["rate"]
+                        time.time() - _last_services_time
+                        > self.service_server_rate
                     ):
-                        message = self._listen_subscription(topic)
+                        self._listen_service()
+                        _last_services_time = time.time()
+
+                if self.subscriptions:
+                    for topic in self.subscriptions:
                         if (
-                            message
-                            and message
-                            != self.subscriptions[topic]["last_message"]
+                            time.time() - _last_subscription_time.get(topic, 0)
+                            > self.subscriptions[topic]["rate"]
                         ):
-                            self.subscriptions[topic]["last_message"] = message
-                            message = {
-                                key: value
-                                for key, value in message.items()
-                                if not key.startswith("__")
-                            }  # Remove internal data structures
-                            for callback in self.subscriptions[topic][
-                                "callbacks"
-                            ]:
-                                callback(message)
-                        _last_subscription_time[topic] = time.time()
+                            message = self._listen_subscription(topic)
+                            if (
+                                message
+                                and message
+                                != self.subscriptions[topic]["last_message"]
+                            ):
+                                self.subscriptions[topic][
+                                    "last_message"
+                                ] = message
+                                message = {
+                                    key: value
+                                    for key, value in message.items()
+                                    if not key.startswith("__")
+                                }  # Remove internal data structures
+                                for callback in self.subscriptions[topic][
+                                    "callbacks"
+                                ]:
+                                    callback(message)
+                            _last_subscription_time[topic] = time.time()
 
-            if self.publishers:
-                for topic in self.publishers:
-                    # Check if it is time to publish
-                    if (
-                        self._timestamp
-                        > float(1 / self.publishers[topic]["rate"])
-                        + self.publishers[topic]["last_time"]
-                    ):
-                        # Publish the message
-                        self._publish(
-                            topic,
-                            self.publishers[topic]["content"],
-                            self.publishers[topic]["rate"],
-                        )
-                        self.publishers[topic]["last_time"] = time.time()
-                        print("published", topic)
+                if self.publishers:
+                    for topic in self.publishers:
+                        # Check if it is time to publish
+                        if (
+                            self._timestamp
+                            > float(1 / self.publishers[topic]["rate"])
+                            + self.publishers[topic]["last_time"]
+                        ):
+                            # Publish the message
+                            self._publish(
+                                topic,
+                                self.publishers[topic]["content"],
+                                self.publishers[topic]["rate"],
+                            )
+                            self.publishers[topic]["last_time"] = time.time()
+                            print("published", topic)
 
-                        print(self.publishers[topic]["last_time"])
+                            print(self.publishers[topic]["last_time"])
+
+            except KeyboardInterrupt:
+                return
+            except Exception as e:
+                self.logger.error(
+                    f"Error occured when listening for node {self.node_id}:{self.name}:\n{e}",
+                    exc_info=True,
+                )
+                return
 
     def _clear_stale_nodes(self, db: Dict[str, Any]) -> None:
         """
@@ -598,7 +608,7 @@ class Node:
 
         if self.services is not None:
             # Initialize a Thread to listen to the services
-            self._service_executor.submit(self._listen_service)
+            # self._service_executor.submit(self._listen_service)
 
             # format the services dictionary
             self._services_map = {}
@@ -637,7 +647,7 @@ class Node:
         ], [x for x in services if x["__dst"] != dst]
         if services:
             db["__srv"] = services
-        else:
+        elif "__srv" in db.keys():
             db.pop("__srv")
         return service_buffer
 
