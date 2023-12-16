@@ -96,6 +96,7 @@ class Node:
         # Generate a unique node id
         self._node_id = self._get_node_id()
 
+        self._publishers = {}
         self._subscriptions = {}
 
         self._services_map = {}
@@ -158,9 +159,15 @@ class Node:
         self.kwargs["parameters"] = parameters
 
     @property
-    def subscription_server_rate(self) -> List[float]:
-        """Return the subscription server rate."""
-        return self._subscription_server_rate
+    def publishers(self) -> Optional[Dict[str, Any]]:
+        """Return the node publishers."""
+        return self._publishers
+
+    @publishers.setter
+    def publishers(self, publishers: Optional[Dict[str, Any]]) -> None:
+        """Set the node publishers."""
+        self._publishers = publishers
+        self.kwargs["publishers"] = publishers
 
     @property
     def subscriptions(self) -> Optional[Dict[str, Any]]:
@@ -350,10 +357,44 @@ class Node:
                 for topic in self.subscriptions:
                     if (
                         time.time() - _last_subscription_time.get(topic, 0)
-                        > self.subscription_server_rate[topic]
+                        > self.subscriptions[topic]["rate"]
                     ):
-                        self._listen_subscription(topic)
+                        message = self._listen_subscription(topic)
+                        if (
+                            message
+                            and message
+                            != self.subscriptions[topic]["last_message"]
+                        ):
+                            self.subscriptions[topic]["last_message"] = message
+                            message = {
+                                key: value
+                                for key, value in message.items()
+                                if not key.startswith("__")
+                            }  # Remove internal data structures
+                            for callback in self.subscriptions[topic][
+                                "callbacks"
+                            ]:
+                                callback(message)
                         _last_subscription_time[topic] = time.time()
+
+            if self.publishers:
+                for topic in self.publishers:
+                    # Check if it is time to publish
+                    if (
+                        self._timestamp
+                        > float(1 / self.publishers[topic]["rate"])
+                        + self.publishers[topic]["last_time"]
+                    ):
+                        # Publish the message
+                        self._publish(
+                            topic,
+                            self.publishers[topic]["content"],
+                            self.publishers[topic]["rate"],
+                        )
+                        self.publishers[topic]["last_time"] = time.time()
+                        print("published", topic)
+
+                        print(self.publishers[topic]["last_time"])
 
     def _clear_stale_nodes(self, db: Dict[str, Any]) -> None:
         """
@@ -466,23 +507,26 @@ class Node:
         """Publish a message on a topic."""
         logging.debug("Registering publisher", topic, message, rate)
         # Initialize a Thread to publish to the topic periodically
-        self._executor.submit(self._publish, topic, message, rate)
+        # self._executor.submit(self._publish, topic, message, rate)
+        self.publishers[topic] = {
+            "content": message,
+            "rate": rate,
+            "last_time": 0,
+        }
 
     def _publish(self, topic: str, message: Any, rate: float = 0) -> None:
         """Publish a message on a topic."""
-        while True:
-            logging.debug(
-                "Publishing",
-                topic,
-                message if not callable(message) else message(),
-                rate,
-            )
-            self.publish_once(
-                topic,
-                message if not callable(message) else message(),
-                rate,
-            )
-            time.sleep(1 / float(rate))
+        logging.debug(
+            "Publishing",
+            topic,
+            message if not callable(message) else message(),
+            rate,
+        )
+        self.publish_once(
+            topic,
+            message if not callable(message) else message(),
+            rate,
+        )
 
     # endregion
 
@@ -496,42 +540,22 @@ class Node:
                 "last_message": None,
                 "callbacks": [callback],
             }
+            logging.debug(
+                f"Registering subscription {topic} for node {self.node_id}:{self.name}."
+            )
         else:
             self.subscriptions[topic]["callbacks"].append(callback)
+            logging.debug(
+                f"Adding callback to subscription {topic} for node {self.node_id}:{self.name}."
+            )
 
-    def _listen(self, topic: str, callback: Callable) -> None:
+    def _listen_subscription(self, topic: str) -> None:
         """Listen to a topic."""
-        _last_message = None
-        _retry = 0
-        while True:
-            db = self._memory.get(topic, default={})
+        # while True:
+        db = self._memory.get(topic, default={})
 
-            if db:  # Topic is available
-                if db != _last_message:
-                    _last_message = db
-                    _retry = 0
-                    callback(db)
-                else:
-                    _retry = min(MAX_RETRIES, _retry + 1)
-
-                timestamp = db.get("__t", 0)
-                rate = db.get("__rate", 0)
-
-                # Sleep until the next message
-                if rate > 0 and _retry < MAX_RETRIES:
-                    # Try to align the subscription with the publishing rate as much as possible
-                    time.sleep(
-                        max(0, 1 / float(rate) - self._timestamp + timestamp)
-                    )
-                else:
-                    # If rate is not specified, then sleep for 0.1 second
-                    time.sleep(0.1)
-
-            else:  # No topic with this name is available
-                pass
-                # self.logger.error(
-                #     f"No topic with name {topic} has been puclished for node {self.node_id}:{self.name} to subscribe."
-                # )
+        # return the db without the internal data structures
+        return db
 
     # endregion
 
