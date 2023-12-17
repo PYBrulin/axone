@@ -88,24 +88,23 @@ class Node:
         # In case of a node restart, the node will be reinitialized with the same kwargs
         self.kwargs = kwargs
 
+        # Generate a unique node id
+        self._node_id = self._get_node_id()
+
+        # Lists of publishers, subscribers and services
+        self._publishers = {}
+        self._subscriptions = {}
+        self._services_map = {}
+
+    def start(self) -> None:
         # Initialize the shared memory
         self._memory = SharedMemoryDict(
             name=self.memory_endpoint, size=self.memory_size
         )
 
-        # Generate a unique node id
-        self._node_id = self._get_node_id()
-
-        self._publishers = {}
-        self._subscriptions = {}
-
-        self._services_map = {}
-
         # Register node on the memory
         self._register_node()
-        self.start()
 
-    def start(self) -> None:
         # Initialize a Thread to listen to the memory events
         # Initialize a Thread to cleanup the memory periodically
         self._executor = ThreadPoolExecutor(max_workers=1)

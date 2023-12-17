@@ -1,6 +1,7 @@
 from multiprocessing import Process
 
 from .node import Node
+from .shared_memory_dict import SharedMemoryDict
 
 
 class NodeProcess(Node):
@@ -12,8 +13,20 @@ class NodeProcess(Node):
 
     def start(self):
         """Start the node."""
-        self._executor = Process(target=self._federated_server)
+        # Initialize a Process to run the node
+        self._executor = Process(target=self.run)
         self._executor.start()
+
+    def run(self):
+        """Run the node."""
+        # Initialize the shared memory
+        self._memory = SharedMemoryDict(
+            name=self.memory_endpoint, size=self.memory_size
+        )
+
+        # Register node on the memory
+        self._register_node()
+        self._federated_server()
 
     def stop(self):
         """Stop the node."""

@@ -1,16 +1,13 @@
+import argparse
 import logging
 import os
 import time
 from typing import NoReturn
 
-from axone.node import Node
-
-os.system("cls||clear")  # Clear the terminal
-
-
 from custom_logger import setup_logger
 
-setup_logger(debug=False)
+from axone.node import Node
+from axone.node_process import NodeProcess
 
 
 class ExampleNodePublisher:
@@ -22,13 +19,21 @@ class ExampleNodePublisher:
     - topic_published_rate_func : publish a message at a fixed rate from a callback function
     """
 
-    def __init__(self) -> None:
+    def __init__(self, use_process: bool = False) -> None:
+        self.use_process = use_process
         # Register node
-        self.node = Node(
-            name="example_publisher",
-            memory_endpoint="ExampleNodeMemory",
-            memory_size=4096,
-        )
+        if not self.use_process:
+            self.node = Node(
+                name="example_publisher",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+            )
+        else:
+            self.node = NodeProcess(
+                name="example_publisher",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+            )
 
     def publish_actualization(self) -> None:
         return {
@@ -51,28 +56,48 @@ class ExampleNodePublisher:
                 rate=2,
             )
 
+            # Note start the node after registering the publishers
+            # Which is a requirement for the NodeProcess variant
+            self.node.start()
+
             counter = 0
             while True:
-                self.node.publish_once(
-                    "topic_published_once",
-                    {"message": f"Hello from topic_published_once {counter}"},
-                )
-                logging.info(
-                    f"Published message to topic_published_once : {counter}"
-                )
+                if not self.use_process:
+                    # Note publish_once is not available in NodeProcess
+                    self.node.publish_once(
+                        "topic_published_once",
+                        {
+                            "message": f"Hello from topic_published_once {counter}"
+                        },
+                    )
+                    logging.info(
+                        f"Published message to topic_published_once : {counter}"
+                    )
                 counter += 1
 
-                print(f"Memory size : {self.node._memory.size}")
+                if not self.use_process:
+                    print(f"Memory size : {self.node._memory.size}")
 
                 time.sleep(1)
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
         finally:
-            self.node._memory.shm.close()
+            if not self.use_process:
+                self.node._memory.shm.close()
+            else:
+                self.node.stop()
             del self.node
 
 
 if __name__ == "__main__":
-    node = ExampleNodePublisher()
+    os.system("cls||clear")  # Clear the terminal
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("-d", "--debug", action="store_true")
+    argparser.add_argument("-p", "--process", action="store_true")
+    args = argparser.parse_args()
+
+    setup_logger(debug=args.debug)
+
+    node = ExampleNodePublisher(use_process=args.process)
     node.run()

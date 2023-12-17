@@ -1,16 +1,13 @@
+import argparse
 import logging  # noqa
 import os
 import time
 from typing import Dict, NoReturn
 
-from axone.node import Node
-
-os.system("cls||clear")  # Clear the terminal
-
-
 from custom_logger import setup_logger
 
-setup_logger(debug=False)
+from axone.node import Node
+from axone.node_process import NodeProcess
 
 
 class ExampleNodePerformer:
@@ -19,7 +16,7 @@ class ExampleNodePerformer:
     This node functions can be called by the node "example_actuator"
     """
 
-    def __init__(self) -> None:
+    def __init__(self, use_process: bool = False) -> None:
         # Class parameters
         self.parameters = {
             "x": 1,
@@ -41,14 +38,25 @@ class ExampleNodePerformer:
         }
 
         # Register node
-        self.node = Node(
-            name="example_performer",
-            memory_endpoint="ExampleNodeMemory",
-            memory_size=4096,
-            parameters=self.parameters,
-            services=services,
-            # hide_services=True,
-        )
+        if not use_process:
+            self.node = Node(
+                name="example_performer",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+                parameters=self.parameters,
+                services=services,
+                # hide_services=True,
+            )
+        else:
+            self.node = NodeProcess(
+                name="example_performer",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+                parameters=self.parameters,
+                services=services,
+                # hide_services=True,
+            )
+        self.node.start()
 
     # region service callbacks
     def print(self, message: str) -> None:
@@ -95,5 +103,12 @@ class ExampleNodePerformer:
 
 
 if __name__ == "__main__":
-    node = ExampleNodePerformer()
+    os.system("cls||clear")  # Clear the terminal
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("-d", "--debug", action="store_true")
+    argparser.add_argument("-p", "--process", action="store_true")
+    args = argparser.parse_args()
+
+    setup_logger(debug=args.debug)
+    node = ExampleNodePerformer(use_process=args.process)
     node.run()
