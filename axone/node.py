@@ -103,6 +103,7 @@ class Node:
 
         # Register node on the memory
         self._register_node()
+        self.start()
 
     def start(self) -> None:
         # Initialize a Thread to listen to the memory events
@@ -159,24 +160,119 @@ class Node:
         self._parameters = parameters
         self.kwargs["parameters"] = parameters
 
+    class Publisher:
+        def __init__(self) -> None:
+            self._topic: str = ""
+            self._rate: float = -1
+            self._last_update: float = 0
+            self._content: Any = None
+
+        @property
+        def topic(self) -> str:
+            return self._topic
+
+        @topic.setter
+        def topic(self, topic: str) -> None:
+            self._topic = topic
+
+        @property
+        def rate(self) -> float:
+            return self._rate
+
+        @rate.setter
+        def rate(self, rate: float) -> None:
+            self._rate = rate
+
+        @property
+        def last_update(self) -> float:
+            return self._last_update
+
+        @last_update.setter
+        def last_update(self, last_update: float) -> None:
+            self._last_update = last_update
+
+        @property
+        def content(self) -> Any:
+            return self._content
+
+        @content.setter
+        def content(self, content: Any) -> None:
+            self._content = content
+
     @property
-    def publishers(self) -> Optional[Dict[str, Any]]:
+    def publishers(self) -> Optional[Dict[str, Publisher]]:
         """Return the node publishers."""
         return self._publishers
 
     @publishers.setter
-    def publishers(self, publishers: Optional[Dict[str, Any]]) -> None:
+    def publishers(self, publishers: Optional[Dict[str, Publisher]]) -> None:
         """Set the node publishers."""
         self._publishers = publishers
         self.kwargs["publishers"] = publishers
 
+    class Subscription:
+        def __init__(self) -> None:
+            self._topic: str = ""
+            self._rate: float = -1
+            self._last_message = None
+            self._last_update: float = 0
+            self._callbacks = []
+
+        @property
+        def topic(self) -> str:
+            return self._topic
+
+        @topic.setter
+        def topic(self, topic: str) -> None:
+            self._topic = topic
+
+        @property
+        def rate(self) -> float:
+            return self._rate
+
+        @rate.setter
+        def rate(self, rate: float) -> None:
+            self._rate = rate
+
+        @property
+        def last_message(self) -> Any | None:
+            return self._last_message
+
+        @last_message.setter
+        def last_message(self, message) -> None:
+            if message is not None and message != self._last_message:
+                self._last_message = message
+                message = {
+                    key: value
+                    for key, value in message.items()
+                    if not key.startswith("__")
+                }  # Remove internal data structures
+
+        @property
+        def last_update(self) -> float:
+            return self._last_update
+
+        @last_update.setter
+        def last_update(self, last_update: float) -> None:
+            self._last_update = last_update
+
+        @property
+        def callbacks(self) -> List[Callable]:
+            return self._callbacks
+
+        def call(self, message) -> None:
+            for callback in self._callbacks:
+                callback(message)
+
     @property
-    def subscriptions(self) -> Optional[Dict[str, Any]]:
+    def subscriptions(self) -> Optional[Dict[str, Subscription]]:
         """Return the node subscriptions dictionnary containing the topics as keys and the callbacks as values."""
         return self._subscriptions
 
     @subscriptions.setter
-    def subscriptions(self, subscriptions: Optional[Dict[str, Any]]) -> None:
+    def subscriptions(
+        self, subscriptions: Optional[Dict[str, Subscription]]
+    ) -> None:
         """Set the node subscriptions."""
         self._subscriptions = subscriptions
         self.kwargs["subscriptions"] = subscriptions
@@ -304,7 +400,6 @@ class Node:
         _last_services_time = (
             0  # The time at which the services were last checked.
         )
-        _last_subscription_time = {}
 
         _cleanup_time = 0  # The time at which the memory was last cleaned up.
         # Setting it to 0 will force the memory to be cleaned up instantly on
@@ -312,6 +407,7 @@ class Node:
         while True:
             try:
                 if time.time() - _last_federation_time > 1:
+                    # TODO: Group this in a dedicated function
                     _last_federation_time = time.time()
 
                     # Update the heartbeat in the Node structure
@@ -326,77 +422,21 @@ class Node:
 
                     if self._timestamp > _cleanup_time:
                         _cleanup_time = self._timestamp + DEFAULT_TIMEOUT
-
-                        self.logger.debug("Cleaning up memory.")
-
-                        # Ensure this node is still registered
-                        if self.node_id not in self._memory.get("__nds", {}):
-                            logging.critical(
-                                f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
-                            )
-                            self._register_node()
-
-                        # Cleanup unused topics
-                        self._memory.process_lambda(self._clear_stale_nodes)
-
-                        # Cleanup unused topics
-                        self._memory.process_lambda(self._clear_stale_topics)
-
-                        # Cleanup unused services
-                        self._memory.process_lambda(self._clear_stale_services)
+                        self._cleanup_memory()
 
                 if self.services is not None:
                     if (
                         time.time() - _last_services_time
                         > self.service_server_rate
                     ):
-                        self._listen_service()
                         _last_services_time = time.time()
+                        self._listen_service()
 
                 if self.subscriptions:
-                    for topic in self.subscriptions:
-                        if (
-                            time.time() - _last_subscription_time.get(topic, 0)
-                            > self.subscriptions[topic]["rate"]
-                        ):
-                            message = self._listen_subscription(topic)
-                            if (
-                                message
-                                and message
-                                != self.subscriptions[topic]["last_message"]
-                            ):
-                                self.subscriptions[topic][
-                                    "last_message"
-                                ] = message
-                                message = {
-                                    key: value
-                                    for key, value in message.items()
-                                    if not key.startswith("__")
-                                }  # Remove internal data structures
-                                for callback in self.subscriptions[topic][
-                                    "callbacks"
-                                ]:
-                                    callback(message)
-                            _last_subscription_time[topic] = time.time()
+                    self._listen_subscriptions()
 
                 if self.publishers:
-                    for topic in self.publishers:
-                        # Check if it is time to publish
-                        if (
-                            self._timestamp
-                            > float(1 / self.publishers[topic]["rate"])
-                            + self.publishers[topic]["last_time"]
-                        ):
-                            # Publish the message
-                            self._publish(
-                                topic,
-                                self.publishers[topic]["content"],
-                                self.publishers[topic]["rate"],
-                            )
-                            self.publishers[topic]["last_time"] = time.time()
-                            print("published", topic)
-
-                            print(self.publishers[topic]["last_time"])
+                    self._publish_loop()
 
             except KeyboardInterrupt:
                 return
@@ -406,6 +446,25 @@ class Node:
                     exc_info=True,
                 )
                 return
+
+    def _cleanup_memory(self) -> None:
+        self.logger.debug("Cleaning up memory.")
+
+        # Ensure this node is still registered
+        if self.node_id not in self._memory.get("__nds", {}):
+            logging.critical(
+                f"Node {self.node_id}:{self.name} has been disconnected from the memory. Re-registering the node."
+            )
+            self._register_node()
+
+        # Cleanup unused topics
+        self._memory.process_lambda(self._clear_stale_nodes)
+
+        # Cleanup unused topics
+        self._memory.process_lambda(self._clear_stale_topics)
+
+        # Cleanup unused services
+        self._memory.process_lambda(self._clear_stale_services)
 
     def _clear_stale_nodes(self, db: Dict[str, Any]) -> None:
         """
@@ -516,23 +575,37 @@ class Node:
 
     def publish_rate(self, topic: str, message: Any, rate: float = 0) -> None:
         """Publish a message on a topic."""
-        logging.debug("Registering publisher", topic, message, rate)
-        # Initialize a Thread to publish to the topic periodically
-        # self._executor.submit(self._publish, topic, message, rate)
-        self.publishers[topic] = {
-            "content": message,
-            "rate": rate,
-            "last_time": 0,
-        }
-
-    def _publish(self, topic: str, message: Any, rate: float = 0) -> None:
-        """Publish a message on a topic."""
         logging.debug(
-            "Publishing",
-            topic,
-            message if not callable(message) else message(),
-            rate,
+            f"Registering publisher {topic} for node {self.node_id}:{self.name}."
         )
+        # Create a new publisher
+        self.publishers[topic] = self.Publisher()
+        self.publishers[topic].topic = topic
+        self.publishers[topic].content = message
+        self.publishers[topic].rate = rate
+        self.publishers[topic].last_update = 0
+
+    def _publish_loop(self) -> None:
+        """Function called periodically to publish messages."""
+        for topic in self.publishers:
+            # Check if it is time to publish
+            if (
+                self._timestamp
+                > float(1 / self.publishers[topic].rate)
+                + self.publishers[topic].last_update
+            ):
+                # Publish the message
+                self._publish_topic(
+                    topic,
+                    self.publishers[topic].content,
+                    self.publishers[topic].rate,
+                )
+                self.publishers[topic].last_update = time.time()
+
+    def _publish_topic(
+        self, topic: str, message: Any, rate: float = 0
+    ) -> None:
+        """Publish a message on a topic."""
         self.publish_once(
             topic,
             message if not callable(message) else message(),
@@ -546,21 +619,50 @@ class Node:
         """Subscribe to a topic."""
         # Add the callback to the list of callbacks for this topic
         if topic not in self.subscriptions:
-            self.subscriptions[topic] = {
-                "rate": -1,
-                "last_message": None,
-                "callbacks": [callback],
-            }
+            # Create a new subscription
+            self.subscriptions[topic] = self.Subscription()
+            self.subscriptions[topic].topic = topic
+            self.subscriptions[topic].rate = -1
+            self.subscriptions[topic].last_message = None
+            self.subscriptions[topic].callbacks.append(callback)
             logging.debug(
                 f"Registering subscription {topic} for node {self.node_id}:{self.name}."
             )
         else:
-            self.subscriptions[topic]["callbacks"].append(callback)
+            # Add the callback to the existing subscription
+            self.subscriptions[topic].callbacks.append(callback)
             logging.debug(
                 f"Adding callback to subscription {topic} for node {self.node_id}:{self.name}."
             )
 
-    def _listen_subscription(self, topic: str) -> None:
+    def _listen_subscriptions(self) -> None:
+        """Function called periodically to listen to topics."""
+        for topic in self.subscriptions:
+            if time.time() - self.subscriptions[topic].last_update > float(
+                1 / self.subscriptions[topic].rate
+            ):
+                message = self._listen_for_topic(topic)
+                if (
+                    message
+                    and message != self.subscriptions[topic].last_message
+                ):
+                    # Update the subscription properties on reception of a message
+                    self.subscriptions[topic].last_message = message
+                    self.subscriptions[topic].last_update = message.get(
+                        "__t", 0
+                    )
+
+                    # Format the message
+                    message = {
+                        key: value
+                        for key, value in message.items()
+                        if not key.startswith("__")
+                    }  # Remove internal data structures
+
+                    # Call the callback
+                    self.subscriptions[topic].call(message)
+
+    def _listen_for_topic(self, topic: str) -> None:
         """Listen to a topic."""
         # while True:
         db = self._memory.get(topic, default={})
