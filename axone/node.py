@@ -104,6 +104,7 @@ class Node:
         # Register node on the memory
         self._register_node()
 
+    def start(self) -> None:
         # Initialize a Thread to listen to the memory events
         # Initialize a Thread to cleanup the memory periodically
         self._executor = ThreadPoolExecutor(max_workers=1)
