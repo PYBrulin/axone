@@ -1,10 +1,9 @@
 # Script to run all example_* script in separate processes
 
 import os
-import sys
 import subprocess
+import sys
 import time
-
 
 os.system("cls||clear")  # Clear the terminal
 

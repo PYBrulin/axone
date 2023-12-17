@@ -21,6 +21,7 @@ class SimpleServerNode:
             memory_endpoint="ExampleNodeMemory",
             memory_size=4096,
         )
+        self.node.start()
         self.highest_rate = 1
 
     def run(self) -> NoReturn:

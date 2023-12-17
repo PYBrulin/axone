@@ -1,16 +1,14 @@
+import argparse
 import logging  # noqa
 import math
 import os
 import time
 from typing import NoReturn
 
-from axone.node import Node
-
-os.system("cls||clear")  # Clear the terminal
-
 from custom_logger import setup_logger
 
-setup_logger(debug=False)
+from axone.node import Node
+from axone.node_process import NodeProcess
 
 
 class ExampleNodeActuator:
@@ -19,7 +17,7 @@ class ExampleNodeActuator:
     This node functions can call the services of the node "example_performer"
     """
 
-    def __init__(self) -> None:
+    def __init__(self, use_process: bool = False) -> None:
         # Class services/callbacks
         services = {
             self.move_response: {
@@ -30,12 +28,21 @@ class ExampleNodeActuator:
         }
 
         # Register node
-        self.node = Node(
-            name="example_actuator",
-            memory_endpoint="ExampleNodeMemory",
-            memory_size=4096,
-            services=services,
-        )
+        if not use_process:
+            self.node = Node(
+                name="example_actuator",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+                services=services,
+            )
+        else:
+            self.node = NodeProcess(
+                name="example_actuator",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+                services=services,
+            )
+        self.node.start()
 
     def move_response(
         self,
@@ -109,5 +116,12 @@ class ExampleNodeActuator:
 
 
 if __name__ == "__main__":
-    node = ExampleNodeActuator()
+    os.system("cls||clear")  # Clear the terminal
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("-d", "--debug", action="store_true")
+    argparser.add_argument("-p", "--process", action="store_true")
+    args = argparser.parse_args()
+
+    setup_logger(debug=args.debug)
+    node = ExampleNodeActuator(use_process=args.process)
     node.run()

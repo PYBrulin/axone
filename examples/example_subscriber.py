@@ -1,16 +1,13 @@
+import argparse
 import logging  # noqa
 import os
 import time
 from typing import NoReturn
 
-from axone.node import Node
-
-os.system("cls||clear")  # Clear the terminal
-
-
 from custom_logger import setup_logger
 
-setup_logger(debug=False)
+from axone.node import Node
+from axone.node_process import NodeProcess
 
 
 class ExampleNodeSubscriber:
@@ -22,13 +19,20 @@ class ExampleNodeSubscriber:
     - topic_published_rate_func : subscribe to a topic published at a fixed rate from a callback function
     """
 
-    def __init__(self) -> None:
+    def __init__(self, use_process: bool = False) -> None:
         # Register node
-        self.node = Node(
-            name="example_subscriber",
-            memory_endpoint="ExampleNodeMemory",
-            memory_size=4096,
-        )
+        if not use_process:
+            self.node = Node(
+                name="example_subscriber",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+            )
+        else:
+            self.node = NodeProcess(
+                name="example_subscriber",
+                memory_endpoint="ExampleNodeMemory",
+                memory_size=4096,
+            )
 
     def print(self, message: str) -> None:
         print(message.get("message"))
@@ -40,6 +44,11 @@ class ExampleNodeSubscriber:
             self.node.subscribe(
                 "topic_published_rate_func", callback=self.print
             )
+
+            # Note start the node after registering the subscribers
+            # Which is a requirement for the NodeProcess variant
+            self.node.start()
+
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
@@ -51,5 +60,12 @@ class ExampleNodeSubscriber:
 
 
 if __name__ == "__main__":
-    node = ExampleNodeSubscriber()
+    os.system("cls||clear")  # Clear the terminal
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("-d", "--debug", action="store_true")
+    argparser.add_argument("-p", "--process", action="store_true")
+    args = argparser.parse_args()
+
+    setup_logger(debug=args.debug)
+    node = ExampleNodeSubscriber(use_process=args.process)
     node.run()
