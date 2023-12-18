@@ -52,7 +52,7 @@ class SharedMemoryDict:
     def __init__(
         self,
         name: str,
-        size: int,
+        size: Optional[int] = None,
         *,
         serializer: SharedMemoryDictSerializer = DEFAULT_SERIALIZER,
     ) -> None:
@@ -255,7 +255,7 @@ class SharedMemoryDict:
             del resource_tracker._CLEANUP_FUNCS["shared_memory"]
 
     def _get_or_create_memory_block(
-        self, name: str, size: int
+        self, name: str, size: Optional[int]
     ) -> SharedMemory:
         """Get or create shared memory block"""
 
@@ -264,7 +264,11 @@ class SharedMemoryDict:
             self.check_security(name)
             return SharedMemory(name=name)
         except FileNotFoundError:
-            return SharedMemory(name=name, create=True, size=size)
+            return SharedMemory(
+                name=name,
+                create=True,
+                size=size if size is not None else 0,
+            )
 
     def check_security(self, name: str) -> None:
         """Check if shared memory belongs to and is only read+writeable
