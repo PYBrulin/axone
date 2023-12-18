@@ -18,10 +18,10 @@ Axone can be installed locally using pip:
 pip install -e .
 ```
 
-or using the provided wheel in the release section:
+or using the provided wheel in the [release](https://github.com/PYBrulin/axone/releases) section:
 
 ```bash
-pip install axone-0.1.0-py3-none-any.whl
+pip install axone-[version]-py3-none-any.whl
 ```
 
 ## Hybrid Federated Architecture
@@ -303,4 +303,64 @@ classDiagram
     example_actuator ..|> example_performer : print(message="Hello")
     example_actuator ..|> example_performer : move(x=1,y=2,z=3)
     example_performer ..|> example_actuator : move_reponse(xy=x+y,yz=y+z,zx=z+x)
+```
+
+## Standalone Process
+
+Accessing and releasing the lock on the shared memory can be costly, especially if the shared memory is accessed at a high rate. To avoid this, it is possible to run the node in a standalone process. In this case, the node will exist in its own process. However, there is currently some ongoing limitation to this approach:
+
+- Subscribers callbacks will not be called as the node is not running in the main process and the reference to the callback is lost.
+- Services can be called but cannot be answered as the node is not running in the main process and the reference to the answer callback is lost.
+
+Advantages of running a node in a standalone process comes mainly on the underlying memory management. As the node is running in its own process, the memory is managed without impacting the main process "too much". This is especially useful when using a large shared memory or when the main process is speed-critical where accessing and releasing the lock on the shared memory can be a bottleneck.
+
+Using a simple Node:
+
+```mermaid
+    sequenceDiagram
+    App->>Node: An action
+    activate Node
+    Node->>Lock: Acquire lock
+    activate Lock
+    Lock-->>Node: Lock released
+    deactivate Lock
+    Node-->>App: An answer
+    deactivate Node
+
+    App->>Node: An action
+    activate Node
+    Node->>Lock: Acquire lock
+    activate Lock
+    Lock-->>Node: Lock released
+    deactivate Lock
+    Node-->>App: An answer
+    deactivate Node
+```
+
+Using a NodeProcess:
+
+```mermaid
+    sequenceDiagram
+    activate Node
+    App->>NodeProcess: An simple call without any answer expected
+    activate NodeProcess
+    NodeProcess->>Node: call(An action)
+    Node->>Lock: Acquire lock
+    activate Lock
+    Lock-->>Node: Lock released
+    deactivate Lock
+    Node-->>NodeProcess: An answer
+    deactivate NodeProcess
+
+    App->>NodeProcess: An action
+    activate NodeProcess
+    NodeProcess->>Node: call(An action)
+    Node->>Lock: Acquire lock
+    activate Lock
+    Lock-->>Node: Lock released
+    deactivate Lock
+    Node-->>NodeProcess: An answer
+    NodeProcess-->>App: An answer (if required)
+    deactivate NodeProcess
+    deactivate Node
 ```
