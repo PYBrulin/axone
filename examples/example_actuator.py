@@ -64,17 +64,20 @@ class ExampleNodeActuator:
 
             while True:
                 # Try to find the node "example_performer" in the network
-                target_node = self.node.find_node_by_name("example_performer")
-                if not target_node:
+                target_node_id = self.node.find_node_by_name(
+                    "example_performer"
+                )
+                if not target_node_id:
                     print("Target node not found")
                 else:  # Found the target node
                     # List the available services of the target node
                     print(
-                        f"Available services of {target_node}: {self.node.list_node_services(target_node)}"
+                        f"Available services of {target_node_id}: {self.node.list_node_services(target_node_id)}"
                     )
                     # Call the service "print" of the target node
+                    print("Calling service print")
                     self.node.call_service(
-                        dest_node_id=target_node,
+                        dest_node_id=target_node_id,
                         service="print",
                         message="Hello from example_actuator",
                     )
@@ -82,33 +85,41 @@ class ExampleNodeActuator:
                     time.sleep(1)
 
                     # Call the service "move" of the target node
-                    self.node.call_service(
-                        dest_node_id=target_node,
-                        service="move",
-                        answer=self.move_response,
-                        x=round(math.sin(10 * time.time() * math.pi / 180), 4),
-                        y=round(
-                            math.sin(
-                                10 * time.time() * math.pi / 180
-                                + math.pi * 1 / 3
+                    if not self.use_process:
+                        # Note : the service "move" declare an answer callback function which is
+                        # triggered when the service is done.  However it is currently not possible
+                        # to use the callback function with the NodeProcess variant.
+                        print("Calling service move")
+                        self.node.call_service(
+                            dest_node_id=target_node_id,
+                            service="move",
+                            answer=self.move_response,
+                            x=round(
+                                math.sin(10 * time.time() * math.pi / 180), 4
                             ),
-                            4,
-                        ),
-                        z=round(
-                            math.sin(
-                                10 * time.time() * math.pi / 180
-                                + math.pi * 2 / 3
+                            y=round(
+                                math.sin(
+                                    10 * time.time() * math.pi / 180
+                                    + math.pi * 1 / 3
+                                ),
+                                4,
                             ),
-                            4,
-                        ),
-                    )
-                    print("Called service move")
+                            z=round(
+                                math.sin(
+                                    10 * time.time() * math.pi / 180
+                                    + math.pi * 2 / 3
+                                ),
+                                4,
+                            ),
+                        )
+                        print("Called service move")
 
                     print(
-                        f"Parameters of {target_node}: {self.node.get_parameters(target_node)}"
+                        f"Parameters of {target_node_id}: {self.node.get_parameters(target_node_id)}"
                     )
 
-                    print(f"Memory size : {self.node._memory.size}")
+                    if not self.use_process:
+                        print(f"Memory size : {self.node._memory.size}")
 
                 time.sleep(1)
         except KeyboardInterrupt:
