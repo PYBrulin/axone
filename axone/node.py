@@ -930,14 +930,22 @@ class Node:
     # region Parameters: Parameter Server functions
     def update_parameters(self, parameters: Dict[str, Any]) -> None:
         """Update node parameters."""
-        db = self._memory.get("__nds", default={})
+        self._memory.process_lambda(self._update_parameters, parameters)
 
-        if self.node_id not in db:
+    def _update_parameters(
+        self, db: Dict[str, Any], parameters: Dict[str, Any]
+    ) -> None:
+        """
+        Update node parameters.
+        Lambda function to be used with the process_lambda function.
+        Modifies the db object in place.
+        """
+        nodes = db.get("__nds", {})
+        if self.node_id not in nodes:
             # ! This case might happen if the server had to restart unexpectedly
             return
-
-        db[self.node_id]["__p"] = parameters
-        self._memory["__nds"] = db
+        nodes[self.node_id]["__p"] = parameters
+        db["__nds"] = nodes
 
     def get_parameters(self, node_id: str) -> Dict[str, Any]:
         """Get node parameters."""

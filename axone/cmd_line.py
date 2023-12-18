@@ -12,6 +12,7 @@ class CmdLine:
         self.node = Node(
             **kwargs,
         )
+        self.node.start()
         self._highest_rate = 1
 
         self._available_commands = {

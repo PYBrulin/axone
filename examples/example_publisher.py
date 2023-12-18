@@ -63,7 +63,7 @@ class ExampleNodePublisher:
             counter = 0
             while True:
                 if not self.use_process:
-                    # Note publish_once is not available in NodeProcess
+                    # TODO: publish_once is not available in NodeProcess
                     self.node.publish_once(
                         "topic_published_once",
                         {
