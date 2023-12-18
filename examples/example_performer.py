@@ -17,6 +17,7 @@ class ExampleNodePerformer:
     """
 
     def __init__(self, use_process: bool = False) -> None:
+        self.use_process = use_process
         # Class parameters
         self.parameters = {
             "x": 1,
@@ -38,7 +39,7 @@ class ExampleNodePerformer:
         }
 
         # Register node
-        if not use_process:
+        if not self.use_process:
             self.node = Node(
                 name="example_performer",
                 memory_endpoint="ExampleNodeMemory",
@@ -56,7 +57,6 @@ class ExampleNodePerformer:
                 services=services,
                 # hide_services=True,
             )
-        self.node.start()
 
     # region service callbacks
     def print(self, message: str) -> None:
@@ -88,6 +88,10 @@ class ExampleNodePerformer:
         # services are already pre-registered in the node
         # There is nothing to do here except wait for a call
         try:
+            # Note start the node after registering the publishers
+            # Which is a requirement for the NodeProcess variant
+            self.node.start()
+
             while True:
                 self.node.update_parameters(
                     self.parameters
@@ -98,7 +102,10 @@ class ExampleNodePerformer:
             print("KeyboardInterrupt")
             pass
         finally:
-            self.node._memory.shm.close()
+            if not self.use_process:
+                self.node._memory.shm.close()
+            else:
+                self.node.stop()
             del self.node
 
 
