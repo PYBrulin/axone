@@ -62,17 +62,14 @@ class ExampleNodePublisher:
 
             counter = 0
             while True:
-                if not self.use_process:
-                    # TODO: publish_once is not available in NodeProcess
-                    self.node.publish_once(
-                        "topic_published_once",
-                        {
-                            "message": f"Hello from topic_published_once {counter}"
-                        },
-                    )
-                    logging.info(
-                        f"Published message to topic_published_once : {counter}"
-                    )
+                self.node.publish_once(
+                    "topic_published_once",
+                    {"message": f"Hello from topic_published_once {counter}"},
+                )
+                logging.info(
+                    f"Published message to topic_published_once : {counter}"
+                )
+
                 counter += 1
 
                 if not self.use_process:
