@@ -54,7 +54,11 @@ class ExampleNodeSubscriber:
 
             while True:
                 time.sleep(1)
+
+                # Note : when using NodeProcess the callback print is pickled so the last_message is not updated
                 print("last_message", self.last_message)
+                # However, it is possible to get the last message from the shared memory using listen_once
+                print(self.node.listen_once("topic_published_once"))
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass

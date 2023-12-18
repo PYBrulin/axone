@@ -89,12 +89,24 @@ class Node:
         self.kwargs = kwargs
 
         # Generate a unique node id
-        self._node_id = self._get_node_id()
+        self._node_id = self.get_node_id()
 
         # Lists of publishers, subscribers and services
         self._publishers = {}
         self._subscriptions = {}
         self._services_map = {}
+
+        self._last_federation_time = (
+            0  # The time at which the memory was last federated.
+        )
+        self._last_services_time = (
+            0  # The time at which the services were last checked.
+        )
+        self._cleanup_time = (
+            0  # The time at which the memory was last cleaned up.
+        )
+        # Setting it to 0 will force the memory to be cleaned up instantly on
+        # the first iteration of the loop
 
     def start(self) -> None:
         # Initialize the shared memory
@@ -108,7 +120,7 @@ class Node:
         # Initialize a Thread to listen to the memory events
         # Initialize a Thread to cleanup the memory periodically
         self._executor = ThreadPoolExecutor(max_workers=1)
-        self._executor.submit(self._federated_server)
+        self._executor.submit(self._server)
 
     @property
     def node_id(self) -> str:
@@ -299,15 +311,15 @@ class Node:
 
     @property
     def _timestamp(self) -> int | float:
-        return self._get_timestamp()
+        return self.get_timestamp()
 
-    def _get_node_id(self) -> str:
+    def get_node_id(self) -> str:
         """Generate a unique node id."""
         return "".join(
             random.choices(string.ascii_letters + string.digits, k=10)
         )
 
-    def _get_timestamp(self) -> int | float:
+    def get_timestamp(self) -> int | float:
         """Output a formatted timestamp."""
         # TODO:Limit the range of the timestamp.
         # TODO:Currently Assume that the timestamp can not be older than 1 year.
@@ -330,7 +342,7 @@ class Node:
             self.logger.warning(
                 f"Node {self.node_id} already registered on the memory."
             )
-            self._node_id = self._get_node_id()
+            self._node_id = self.get_node_id()
 
         _db = self._memory.get("__nds", default={})
 
@@ -370,7 +382,7 @@ class Node:
 
     # region Federated server functions
 
-    def _federated_server(self) -> None:
+    def _server(self) -> None:
         """
         Cleanup the structure periodically.
         All nodes should call this function periodically to clean up the memory
@@ -393,58 +405,48 @@ class Node:
             7. Nodes should be removed from the memory if they are not updated
                 within a certain timespan to avoid memory leaks
         """
-        _last_federation_time = (
-            0  # The time at which the memory was last federated.
-        )
-        _last_services_time = (
-            0  # The time at which the services were last checked.
-        )
-
-        _cleanup_time = 0  # The time at which the memory was last cleaned up.
-        # Setting it to 0 will force the memory to be cleaned up instantly on
-        # the first iteration of the loop
         while True:
             try:
-                if time.time() - _last_federation_time > 1:
-                    # TODO: Group this in a dedicated function
-                    _last_federation_time = time.time()
-
-                    # Update the heartbeat in the Node structure
-                    self._memory.modify_structure(
-                        ["__nds", self.node_id, "__t"],
-                        self._timestamp,
-                    )
-
-                    self.logger.debug(
-                        f"Updating heartbeat for node {self.node_id}:{self.name}."
-                    )
-
-                    if self._timestamp > _cleanup_time:
-                        _cleanup_time = self._timestamp + DEFAULT_TIMEOUT
-                        self._cleanup_memory()
-
-                if self.services is not None:
-                    if (
-                        time.time() - _last_services_time
-                        > self.service_server_rate
-                    ):
-                        _last_services_time = time.time()
-                        self._listen_service()
-
-                if self.subscriptions:
-                    self._listen_subscriptions()
-
-                if self.publishers:
-                    self._publish_loop()
-
-            except KeyboardInterrupt:
-                return
+                self._server_exec()
             except Exception as e:
                 self.logger.error(
                     f"Error occured when listening for node {self.node_id}:{self.name}:\n{e}",
                     exc_info=True,
                 )
-                return
+                break
+
+    def _server_exec(self) -> None:
+        if time.time() - self._last_federation_time > 1:
+            # TODO: Group this in a dedicated function
+            self._last_federation_time = time.time()
+
+            # Update the heartbeat in the Node structure
+            self._memory.modify_structure(
+                ["__nds", self.node_id, "__t"],
+                self._timestamp,
+            )
+
+            self.logger.debug(
+                f"Updating heartbeat for node {self.node_id}:{self.name}."
+            )
+
+            if self._timestamp > self._cleanup_time:
+                self._cleanup_time = self._timestamp + DEFAULT_TIMEOUT
+                self._cleanup_memory()
+
+        if self.services is not None:
+            if (
+                time.time() - self._last_services_time
+                > self.service_server_rate
+            ):
+                self._last_services_time = time.time()
+                self._listen_service()
+
+        if self.subscriptions:
+            self._listen_subscriptions()
+
+        if self.publishers:
+            self._publish_loop()
 
     def _cleanup_memory(self) -> None:
         self.logger.debug("Cleaning up memory.")
@@ -531,10 +533,23 @@ class Node:
     # endregion
 
     # region Publisher functions
-    def publish_once(
+
+    def publish_rate(self, topic: str, message: Any, rate: float = 0) -> None:
+        """Register a publisher for a topic."""
+        logging.debug(
+            f"Registering publisher {topic} for node {self.node_id}:{self.name}."
+        )
+        # Create a new publisher
+        self.publishers[topic] = self.Publisher()
+        self.publishers[topic].topic = topic
+        self.publishers[topic].content = message
+        self.publishers[topic].rate = rate
+        self.publishers[topic].last_update = 0
+
+    def _publish_once(
         self,
         topic: str,
-        message: Any,
+        message: Dict[str, Any],
         rate: Optional[Union[int, float]] = None,
     ) -> None:
         """Publish a message once on a topic."""
@@ -572,17 +587,18 @@ class Node:
                 f"Topic {topic} is not available for node {self.node_id}:{self.name} to publish."
             )
 
-    def publish_rate(self, topic: str, message: Any, rate: float = 0) -> None:
+    def publish_once(
+        self,
+        topic: str,
+        message: Any,
+        rate: Optional[Union[int, float]] = None,
+    ) -> None:
         """Publish a message on a topic."""
-        logging.debug(
-            f"Registering publisher {topic} for node {self.node_id}:{self.name}."
+        self._publish_once(
+            topic,
+            message if not callable(message) else message(),
+            rate,
         )
-        # Create a new publisher
-        self.publishers[topic] = self.Publisher()
-        self.publishers[topic].topic = topic
-        self.publishers[topic].content = message
-        self.publishers[topic].rate = rate
-        self.publishers[topic].last_update = 0
 
     def _publish_loop(self) -> None:
         """Function called periodically to publish messages."""
@@ -594,22 +610,14 @@ class Node:
                 + self.publishers[topic].last_update
             ):
                 # Publish the message
-                self._publish_topic(
+                self._publish_once(
                     topic,
-                    self.publishers[topic].content,
+                    self.publishers[topic].content
+                    if not callable(self.publishers[topic].content)
+                    else self.publishers[topic].content(),
                     self.publishers[topic].rate,
                 )
                 self.publishers[topic].last_update = time.time()
-
-    def _publish_topic(
-        self, topic: str, message: Any, rate: float = 0
-    ) -> None:
-        """Publish a message on a topic."""
-        self.publish_once(
-            topic,
-            message if not callable(message) else message(),
-            rate,
-        )
 
     # endregion
 
@@ -669,9 +677,23 @@ class Node:
         # return the db without the internal data structures
         return db
 
+    def _listen_once(self, topic: str) -> Dict[str, Any]:
+        """Listen to a topic once."""
+        # while True:
+        db = self._memory.get(topic, default={})
+
+        # return the db without the internal data structures
+        return {
+            key: value for key, value in db.items() if not key.startswith("__")
+        }
+
+    def listen_once(self, topic: str) -> Dict[str, Any]:
+        """Listen to a topic once."""
+        return self._listen_once(topic)
+
     # endregion
 
-    # region services: Services: Request/Response functions
+    # region Services - Request/Response functions
 
     # services are specific calls that can be made to the underlying program that runs the node
     # The services are registered as a dictionary of key-value pairs
@@ -742,7 +764,7 @@ class Node:
             if database is None:
                 self._memory["__nds"] = db
 
-    def split_services_db(self, db: Dict[str, Any], dst) -> list[Any]:
+    def _split_services_db(self, db: Dict[str, Any], dst) -> list[Any]:
         services = db.get("__srv", [])
         service_buffer, services = [
             x for x in services if x["__dst"] == dst
@@ -764,7 +786,7 @@ class Node:
         if "__srv" in self._memory.keys():
             # Fetch and remove all services directed to this node from the memory
             service_buffer = self._memory.process_lambda(
-                self.split_services_db, self.node_id
+                self._split_services_db, self.node_id
             )
 
             if service_buffer:
@@ -806,17 +828,17 @@ class Node:
                             response is not None
                             and service.get("__ans", None) is not None
                         ):
-                            self.call_service(
+                            self._call_service(
                                 dest_node_id=service.get("__src"),
                                 service=service.get("__ans"),
                                 **response,
                             )
                     except Exception as e:
                         self.logger.error(
-                            f"Callback occured when running callback {service} with arguments {service[callback.__name__]}:\n{e}"
+                            f"Exception occured when running callback {service} with arguments {service[callback.__name__]}:\n{e}"
                         )
 
-    def call_service(
+    def _call_service(
         self,
         dest_node_id: Optional[str] = None,
         dest_node_name: Optional[str] = None,
@@ -840,12 +862,12 @@ class Node:
             return
 
         if dest_node_id is None:
-            dest_node_id = self.find_node_by_name(dest_node_name)
+            dest_node_id = self._find_node_by_name(dest_node_name)
 
         if dest_node_id in self._memory.get(
             "__nds", {}
         ):  # Check if at least one node with the same name exists
-            if not self.is_service_advertised(dest_node_id, service):
+            if not self._is_service_advertised(dest_node_id, service):
                 # service is not available
                 # No need to call the service
                 self.logger.warning(
@@ -892,30 +914,64 @@ class Node:
                 f"No node with name {dest_node_id} was found to call service {service}."
             )
 
-    def find_nodes_by_name(self, name: str) -> List[str]:
-        """Search for a node by name."""
-        nodes = self._memory.get("__nds", default={})
+    def call_service(
+        self,
+        dest_node_id: Optional[str] = None,
+        dest_node_name: Optional[str] = None,
+        service: Optional[str] = None,
+        answer: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Call an service on a node."""
+        self._call_service(
+            dest_node_id=dest_node_id,
+            dest_node_name=dest_node_name,
+            service=service,
+            answer=answer,
+            **kwargs,
+        )
+
+    def _find_nodes_by_name(self, name: str) -> List[str]:
+        """
+        Search several nodes by their name.
+        """
+        nodes = self._memory.get("__nds", {})
         return [node for node in nodes.keys() if nodes[node]["__n"] == name]
+
+    def find_nodes_by_name(self, name: str) -> List[str]:
+        """Search several nodes by their name."""
+        return self._find_nodes_by_name(name)
+
+    def _find_node_by_name(self, name: str) -> Optional[str]:
+        """
+        Search for a node by name.
+        """
+        nodes = self._find_nodes_by_name(name)
+        return nodes[0] if nodes else None
 
     def find_node_by_name(self, name: str) -> Optional[str]:
         """Search for a node by name."""
-        nodes = self.find_nodes_by_name(name)
-        # Return the first node with the same name
-        return nodes[0] if nodes else None
+        return self._find_node_by_name(name)
 
-    def list_node_services(self, node_name: str) -> Dict[str, Any]:
+    def list_node_services(self, node_id: str) -> Dict[str, Any]:
         """List the services available for a node."""
-        node_id = self.find_node_by_name(node_name)
-        return self._memory.get("__nds", {}).get(node_id, {}).get("__s", {})
+        return self._list_node_services(node_id)
 
-    def is_node_advertising_services(self, node_name: str) -> bool:
+    def _list_node_services(self, node_id: str) -> Dict[str, Any]:
+        """List the services available for a node."""
+        db = self._memory.get("__nds", default={})
+        return db.get(node_id, {}).get("__s", {})
+
+    def _is_node_advertising_services(self, node_id: str) -> bool:
         """Check if a node is advertising services."""
-        node_id = self.find_node_by_name(node_name)
-        return (
-            self._memory.get("__nds", {}).get(node_id, {}).get("__s", {}) != {}
-        )
+        db = self._memory.get("__nds", default={})
+        return db.get(node_id, {}).get("__s", {}) != {}
 
-    def is_service_advertised(self, node_id: str, service: str) -> bool:
+    def is_node_advertising_services(self, node_id: str) -> bool:
+        """Check if a node is advertising services."""
+        return self._is_node_advertising_services(node_id)
+
+    def _is_service_advertised(self, node_id: str, service: str) -> bool:
         """Check if an service is advertised by a node."""
         return (
             self._memory.get("__nds", {})
@@ -925,14 +981,22 @@ class Node:
             != {}
         )
 
+    def is_service_advertised(self, node_id: str, service: str) -> bool:
+        """Check if an service is advertised by a node."""
+        return self._is_service_advertised(node_id, service)
+
     # endregion
 
     # region Parameters: Parameter Server functions
     def update_parameters(self, parameters: Dict[str, Any]) -> None:
         """Update node parameters."""
-        self._memory.process_lambda(self._update_parameters, parameters)
+        self._update_parameters(parameters)
 
-    def _update_parameters(
+    def _update_parameters(self, parameters: Dict[str, Any]) -> None:
+        """Update node parameters."""
+        self._memory.process_lambda(self.__update_parameters, parameters)
+
+    def __update_parameters(
         self, db: Dict[str, Any], parameters: Dict[str, Any]
     ) -> None:
         """
@@ -947,9 +1011,13 @@ class Node:
         nodes[self.node_id]["__p"] = parameters
         db["__nds"] = nodes
 
-    def get_parameters(self, node_id: str) -> Dict[str, Any]:
+    def _get_parameters(self, node_id: str) -> Dict[str, Any]:
         """Get node parameters."""
         db = self._memory.get("__nds", default={})
         return db.get(node_id, {}).get("__p", {})
+
+    def get_parameters(self, node_id: str) -> Dict[str, Any]:
+        """Get node parameters."""
+        return self._get_parameters(node_id)
 
     # endregion
