@@ -33,8 +33,11 @@ class ExampleNodeSubscriber:
                 memory_endpoint="ExampleNodeMemory",
                 memory_size=4096,
             )
+        self.last_message = None
 
     def print(self, message: str) -> None:
+        if message.get("message") != self.last_message:
+            self.last_message = message.get("message")
         print(message.get("message"))
 
     def run(self) -> NoReturn:
@@ -51,6 +54,7 @@ class ExampleNodeSubscriber:
 
             while True:
                 time.sleep(1)
+                print("last_message", self.last_message)
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass

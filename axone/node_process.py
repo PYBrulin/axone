@@ -1,4 +1,4 @@
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 
 from .node import Node
 from .shared_memory_dict import SharedMemoryDict
@@ -11,13 +11,25 @@ class NodeProcess(Node):
         """Initialize the node."""
         super().__init__(name, **kwargs)
 
+        # A communication bus is required to communicate between this instance and the Process self._executor
+        # The communication bus is a Queue
+        self._executor = None
+        self._tx_queue = None
+        self._rx_queue = None
+
     def start(self):
         """Start the node."""
+
+        self._tx_queue = Queue()
+        self._rx_queue = Queue()
+
         # Initialize a Process to run the node
-        self._executor = Process(target=self.run)
+        self._executor = Process(
+            target=self.run, args=(self._tx_queue, self._rx_queue)
+        )
         self._executor.start()
 
-    def run(self):
+    def run(self, tx_queue, rx_queue):
         """Run the node."""
         # Initialize the shared memory
         self._memory = SharedMemoryDict(
@@ -36,3 +48,23 @@ class NodeProcess(Node):
     def join(self):
         """Join the node."""
         self._executor.join()
+
+    # region Federated server functions
+
+    # endregion
+
+    # region Publisher functions
+
+    # endregion
+
+    # region Subscriber functions
+
+    # endregion
+
+    # region services: Services: Request/Response functions
+
+    # endregion
+
+    # region Parameters: Parameter Server functions
+
+    # endregion
