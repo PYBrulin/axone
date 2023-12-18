@@ -18,6 +18,7 @@ class ExampleNodeActuator:
     """
 
     def __init__(self, use_process: bool = False) -> None:
+        self.use_process = use_process
         # Class services/callbacks
         services = {
             self.move_response: {
@@ -28,7 +29,7 @@ class ExampleNodeActuator:
         }
 
         # Register node
-        if not use_process:
+        if not self.use_process:
             self.node = Node(
                 name="example_actuator",
                 memory_endpoint="ExampleNodeMemory",
@@ -42,7 +43,6 @@ class ExampleNodeActuator:
                 memory_size=4096,
                 services=services,
             )
-        self.node.start()
 
     def move_response(
         self,
@@ -58,6 +58,10 @@ class ExampleNodeActuator:
 
     def run(self) -> NoReturn:
         try:
+            # Note start the node after registering the publishers
+            # Which is a requirement for the NodeProcess variant
+            self.node.start()
+
             while True:
                 # Try to find the node "example_performer" in the network
                 target_node = self.node.find_node_by_name("example_performer")
@@ -111,7 +115,10 @@ class ExampleNodeActuator:
             print("KeyboardInterrupt")
             pass
         finally:
-            self.node._memory.shm.close()
+            if not self.use_process:
+                self.node._memory.shm.close()
+            else:
+                self.node.stop()
             del self.node
 
 
