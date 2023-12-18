@@ -92,9 +92,9 @@ class Node:
         self._node_id = self.get_node_id()
 
         # Lists of publishers, subscribers and services
-        self._publishers = {}
-        self._subscriptions = {}
-        self._services_map = {}
+        self._publishers: Dict[str, Node.Publisher] = {}
+        self._subscriptions: Dict[str, Node.Subscription] = {}
+        self._services_map: Dict[str, Callable] = {}
 
         self._last_federation_time = (
             0  # The time at which the memory was last federated.
@@ -150,7 +150,7 @@ class Node:
         self.kwargs["memory_endpoint"] = memory_endpoint
 
     @property
-    def memory_size(self) -> Optional[int]:
+    def memory_size(self) -> int:
         """Return the memory size."""
         return self._memory_size
 
@@ -161,12 +161,12 @@ class Node:
         self.kwargs["memory_size"] = memory_size
 
     @property
-    def parameters(self) -> Optional[Dict[str, Any]]:
+    def parameters(self) -> Dict[str, Any]:
         """Return the node parameters."""
         return self._parameters
 
     @parameters.setter
-    def parameters(self, parameters: Optional[Dict[str, Any]]) -> None:
+    def parameters(self, parameters: Dict[str, Any]) -> None:
         """Set the node parameters."""
         self._parameters = parameters
         self.kwargs["parameters"] = parameters
@@ -211,12 +211,12 @@ class Node:
             self._content = content
 
     @property
-    def publishers(self) -> Optional[Dict[str, Publisher]]:
+    def publishers(self) -> Dict[str, Publisher]:
         """Return the node publishers."""
         return self._publishers
 
     @publishers.setter
-    def publishers(self, publishers: Optional[Dict[str, Publisher]]) -> None:
+    def publishers(self, publishers: Dict[str, Publisher]) -> None:
         """Set the node publishers."""
         self._publishers = publishers
         self.kwargs["publishers"] = publishers
@@ -276,14 +276,12 @@ class Node:
                 callback(message)
 
     @property
-    def subscriptions(self) -> Optional[Dict[str, Subscription]]:
+    def subscriptions(self) -> Dict[str, Subscription]:
         """Return the node subscriptions dictionnary containing the topics as keys and the callbacks as values."""
         return self._subscriptions
 
     @subscriptions.setter
-    def subscriptions(
-        self, subscriptions: Optional[Dict[str, Subscription]]
-    ) -> None:
+    def subscriptions(self, subscriptions: Dict[str, Subscription]) -> None:
         """Set the node subscriptions."""
         self._subscriptions = subscriptions
         self.kwargs["subscriptions"] = subscriptions
@@ -294,7 +292,7 @@ class Node:
         return self._services
 
     @services.setter
-    def services(self, services: Optional[Dict[str, Any]]) -> None:
+    def services(self, services: Dict[Union[str, Callable], Any]) -> None:
         """Set the node services."""
         self._services = services
         self.kwargs["services"] = services
@@ -504,7 +502,9 @@ class Node:
         for topic in to_remove:
             db.pop(topic)
 
-    def _clear_stale_services(self, db: Dict[str, Any]) -> None:
+    def _clear_stale_services(
+        self, db: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
         Clear stale services.
         Lambda function to be used with the process_lambda function.
@@ -540,7 +540,7 @@ class Node:
             f"Registering publisher {topic} for node {self.node_id}:{self.name}."
         )
         # Create a new publisher
-        self.publishers[topic] = self.Publisher()
+        self.publishers[topic] = Node.Publisher()
         self.publishers[topic].topic = topic
         self.publishers[topic].content = message
         self.publishers[topic].rate = rate
@@ -627,7 +627,7 @@ class Node:
         # Add the callback to the list of callbacks for this topic
         if topic not in self.subscriptions:
             # Create a new subscription
-            self.subscriptions[topic] = self.Subscription()
+            self.subscriptions[topic] = Node.Subscription()
             self.subscriptions[topic].topic = topic
             self.subscriptions[topic].rate = -1
             self.subscriptions[topic].last_message = None
@@ -669,12 +669,12 @@ class Node:
                     # Call the callback
                     self.subscriptions[topic].call(message)
 
-    def _listen_for_topic(self, topic: str) -> None:
+    def _listen_for_topic(self, topic: str) -> Dict[str, Any]:
         """Listen to a topic."""
         # while True:
         db = self._memory.get(topic, default={})
 
-        # return the db without the internal data structures
+        # return the db *with* the internal data structures
         return db
 
     def _listen_once(self, topic: str) -> Dict[str, Any]:
@@ -861,7 +861,7 @@ class Node:
             )
             return
 
-        if dest_node_id is None:
+        if dest_node_id is None and dest_node_name is not None:
             dest_node_id = self._find_node_by_name(dest_node_name)
 
         if dest_node_id in self._memory.get(

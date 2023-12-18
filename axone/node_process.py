@@ -52,9 +52,9 @@ class NodeProcess(Node):
 
         # Register node on the memory
         self._register_node()
-        self._server(conn)
+        self._server_process(conn)
 
-    def _server(self, conn) -> None:
+    def _server_process(self, conn) -> None:
         while True:
             # Check if there's a task to be executed
             if conn.poll():
