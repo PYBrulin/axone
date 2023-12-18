@@ -1,1 +1,1 @@
-- Services are not working when using processes. Underlying logic needs to be refactored.
+- Subscription callbacks and Services answers are not supported yet for NodeProcess.
