@@ -41,7 +41,7 @@ class SimpleServerNode:
                     )
                 )
 
-                #! memory size is only updated when the memory is written
+                # ! memory size is only updated when the memory is written
                 # print(f"Memory size : {self.node._memory.size}")
 
                 # Find the highest rated topic and try to match its frequency

@@ -5,13 +5,11 @@ import subprocess
 import sys
 import time
 
-os.system("cls||clear")  # Clear the terminal
-
-
 from custom_logger import setup_logger
 
 setup_logger(debug=False)
 
+os.system("cls||clear")  # Clear the terminal
 
 # Get the path to the examples directory
 examples_dir = os.path.dirname(os.path.realpath(__file__))
