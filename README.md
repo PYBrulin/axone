@@ -138,11 +138,11 @@ node = Node(
 )
 node.publish_once(
     "topic_published_once",
-    message={"data": f"Hello from topic_published_once"},
+    message={"data": "Hello from topic_published_once"},
 )
 
 def callable_function(self) -> None:
-    return {"message": f"Hello world!"}  # Must return a dictionary
+    return {"message": "Hello world!"}  # Must return a dictionary
 
 node.publish_rate(
     "topic_published_rate_func",

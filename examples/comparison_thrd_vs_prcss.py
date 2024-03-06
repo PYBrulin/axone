@@ -28,7 +28,7 @@ node = Node(
 # Register a rated publisher
 node.publish_rate(
     "topic_published_rate",
-    message={"message": f"Hello from topic_published_rate"},
+    message={"message": "Hello from topic_published_rate"},
     rate=3,
 )
 
@@ -59,7 +59,7 @@ node = NodeProcess(
 # Register a rated publisher
 node.publish_rate(
     "topic_published_rate",
-    message={"message": f"Hello from topic_published_rate"},
+    message={"message": "Hello from topic_published_rate"},
     rate=3,
 )
 
