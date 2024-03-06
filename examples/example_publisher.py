@@ -45,7 +45,7 @@ class ExampleNodePublisher:
             # Register a rated publisher
             self.node.publish_rate(
                 "topic_published_rate",
-                message={"message": f"Hello from topic_published_rate"},
+                message={"message": "Hello from topic_published_rate"},
                 rate=3,
             )
 

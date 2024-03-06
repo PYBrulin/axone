@@ -44,11 +44,11 @@ class Node:
         if self.config_file is not None:
             # Load the config file
             if os.path.exists(self.config_file):
-                with open(self.config_file, "r") as f:
+                with open(self.config_file) as f:
                     try:
                         # Merge the config file with the kwargs
                         kwargs = {**kwargs, **json.load(f)}
-                    except Exception as e:
+                    except Exception:
                         raise ValueError(
                             f"Config file {self.config_file} is not a valid json file."
                         )
@@ -326,9 +326,11 @@ class Node:
         # And reduce the floating point precision to 3 digits
         return round(
             time.time(),  # TODO: % self._timestamp_range,
-            self._timestamp_precision
-            if self._timestamp_precision > 0
-            else None,  # If ndigits is None round() converts to int
+            (
+                self._timestamp_precision
+                if self._timestamp_precision > 0
+                else None
+            ),  # If ndigits is None round() converts to int
         )
 
     def _register_node(self) -> None:
@@ -612,9 +614,11 @@ class Node:
                 # Publish the message
                 self._publish_once(
                     topic,
-                    self.publishers[topic].content
-                    if not callable(self.publishers[topic].content)
-                    else self.publishers[topic].content(),
+                    (
+                        self.publishers[topic].content
+                        if not callable(self.publishers[topic].content)
+                        else self.publishers[topic].content()
+                    ),
                     self.publishers[topic].rate,
                 )
                 self.publishers[topic].last_update = time.time()
@@ -811,7 +815,8 @@ class Node:
                 if callback is None:
                     # service is not available
                     self.logger.warning(
-                        f"Service {service} was called to this node from {service.get('__src')}, but the service is not available."
+                        f"Service {service} was called to this node from {service.get('__src')},"
+                        + " but the service is not available."
                     )
                     continue
                 else:
@@ -835,7 +840,8 @@ class Node:
                             )
                     except Exception as e:
                         self.logger.error(
-                            f"Exception occured when running callback {service} with arguments {service[callback.__name__]}:\n{e}"
+                            f"Exception occured when running callback {service} with arguments {service[callback.__name__]}:"
+                            + f"\n{e}"
                         )
 
     def _call_service(

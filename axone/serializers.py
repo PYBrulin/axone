@@ -15,11 +15,9 @@ class DeserializationError(ValueError):
 
 
 class SharedMemoryDictSerializer(Protocol):
-    def dumps(self, obj: dict) -> bytes:
-        ...
+    def dumps(self, obj: dict) -> bytes: ...
 
-    def loads(self, data: bytes) -> dict:
-        ...
+    def loads(self, data: bytes) -> dict: ...
 
 
 class JSONSerializer:

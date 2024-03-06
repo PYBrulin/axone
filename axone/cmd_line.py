@@ -108,9 +108,12 @@ class CmdLine:
                 ):
                     if isinstance(subcommand[1], dict):
                         print(
-                            " │ "
-                            if j < len(self._available_commands[args[0]]) - 2
-                            else " └ ",
+                            (
+                                " │ "
+                                if j
+                                < len(self._available_commands[args[0]]) - 2
+                                else " └ "
+                            ),
                             end="",
                         )
                         print(
@@ -126,24 +129,28 @@ class CmdLine:
         for i, command in enumerate(self._available_commands.items()):
             if isinstance(command[1], dict):
                 print(
-                    " │ "
-                    if (
-                        i < len(self._available_commands) - 1
-                        or len(command[1]) > 0
-                    )
-                    else " └ ",
+                    (
+                        " │ "
+                        if (
+                            i < len(self._available_commands) - 1
+                            or len(command[1]) > 0
+                        )
+                        else " └ "
+                    ),
                     end="",
                 )
                 print(f"{command[0]:17s} : {command[1]['_help']}")
                 for j, subcommand in enumerate(command[1].items()):
                     if isinstance(subcommand[1], dict):
                         print(
-                            " │ "
-                            if (
-                                i < len(self._available_commands) - 1
-                                or j < len(command[1]) - 2
-                            )
-                            else " └ ",
+                            (
+                                " │ "
+                                if (
+                                    i < len(self._available_commands) - 1
+                                    or j < len(command[1]) - 2
+                                )
+                                else " └ "
+                            ),
                             end="",
                         )
                         print(

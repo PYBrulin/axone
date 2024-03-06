@@ -80,7 +80,7 @@ class ExampleNodePerformer:
         }
 
     def stop(self) -> None:
-        print(f"Stopping")
+        print("Stopping")
 
     # endregion
 
