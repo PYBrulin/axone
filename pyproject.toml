@@ -6,7 +6,7 @@ authors = [
 description = "ROS-like framework for distributed computing implemented in pure-Python"
 readme = "README.md"
 requires-python = ">=3.7"
-keywords = ["one", "two"]
+keywords = ["AXONE", "distributed-computing", "federated-computational-governance "]
 license = {text = "BSD-3-Clause"}
 classifiers = [
     "Operating System :: OS Independent",
@@ -15,6 +15,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     "filelock",
+    "crc",
     'portalocker ; platform_system == "Windows"'
 ]
 
@@ -31,7 +32,7 @@ packages = ["axone"]
 [tool.isort]
 known_first_party = "axone"
 atomic = true
-line_length = 79
+line_length = 127
 multi_line_output = 3
 use_parentheses = true
 include_trailing_comma = true
@@ -39,4 +40,4 @@ force_grid_wrap = 0
 
 [tool.black]
 skip-string-normalization = true
-line-length = 79
+line-length = 127
