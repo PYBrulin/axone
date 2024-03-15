@@ -38,6 +38,10 @@ class ConfigFileNode:
 
     def run(self) -> NoReturn:
         try:
+            # Note start the node after registering the publishers
+            # Which is a requirement for the NodeProcess variant
+            self.node.start()
+
             # No need to run forever for this example
             # Read the memory content three times and then exit
             for _ in range(3):

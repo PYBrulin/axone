@@ -9,9 +9,7 @@ class CustomFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    fmt = (
-        "[%(levelname)1.1s] %(asctime)s %(filename)s:%(lineno)d - %(message)s"
-    )
+    fmt = "[%(levelname)1.1s] %(asctime)s %(filename)s:%(lineno)d - %(message)s"
 
     FORMATS = {
         logging.DEBUG: magenta + fmt + reset,
@@ -30,9 +28,7 @@ class CustomFormatter(logging.Formatter):
 def setup_logger(**kwargs) -> None:
     """Set up the logging."""
     # Set up the main logger
-    logging_level = (
-        logging.INFO if not kwargs.get("debug", False) else logging.DEBUG
-    )
+    logging_level = logging.INFO if not kwargs.get("debug", False) else logging.DEBUG
     main_logger = logging.getLogger()
     main_logger.setLevel(logging_level)
 
@@ -51,8 +47,6 @@ def setup_logger(**kwargs) -> None:
 
     def exception_hook(exc_type, exc_value, exc_traceback) -> None:
         """Allows to catch all uncaught exception in the log"""
-        logging.critical(
-            "Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback)
-        )
+        logging.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
 
     sys.excepthook = exception_hook

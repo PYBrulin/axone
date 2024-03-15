@@ -30,25 +30,19 @@ class NodeProcess(Node):
         self._parent_conn, self._child_conn = multiprocessing.Pipe()
 
         # Initialize a Process to run the node
-        self._executor = multiprocessing.Process(
-            target=self.run, args=(self._child_conn,), name="NodeProcess"
-        )
+        self._executor = multiprocessing.Process(target=self.run, args=(self._child_conn,), name="NodeProcess")
         self._executor.start()
 
     def _call_function(self, function_name, *args, **kwargs) -> Any:
         """Call a function on the node."""
-        self.logger.debug(
-            f"Calling function {function_name} with args={args}, kwargs={kwargs}"
-        )
+        self.logger.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
         self._parent_conn.send((function_name, args, kwargs))
         return self._parent_conn.recv()
 
     def run(self, conn):
         """Run the node."""
         # Initialize the shared memory
-        self._memory = SharedMemoryDict(
-            name=self.memory_endpoint, size=self.memory_size
-        )
+        self._memory = SharedMemoryDict(name=self.memory_endpoint, size=self.memory_size)
 
         # Register node on the memory
         self._register_node()
@@ -69,9 +63,7 @@ class NodeProcess(Node):
                     self.logger.warning(f"Result: {result}")
                     conn.send(result)
                 except AttributeError:
-                    self.logger.error(
-                        f"Function {function_name} does not exist."
-                    )
+                    self.logger.error(f"Function {function_name} does not exist.")
             else:
                 # Handle the case where there's nothing to receive
                 pass
@@ -101,9 +93,7 @@ class NodeProcess(Node):
         rate: Optional[Union[int, float]] = None,
     ) -> None:
         """Publish a message to a topic once."""
-        return self._call_function(
-            "_publish_once", topic=topic, message=message, rate=rate
-        )
+        return self._call_function("_publish_once", topic=topic, message=message, rate=rate)
 
     # endregion
 
@@ -148,14 +138,10 @@ class NodeProcess(Node):
         return self._call_function("_list_node_services", node_id=node_id)
 
     def is_node_advertising_services(self, node_name: str) -> bool:
-        return self._call_function(
-            "_is_node_advertising_services", node_name=node_name
-        )
+        return self._call_function("_is_node_advertising_services", node_name=node_name)
 
     def is_service_advertised(self, node_id: str, service: str) -> bool:
-        return self._call_function(
-            "_is_service_advertised", node_id=node_id, service=service
-        )
+        return self._call_function("_is_service_advertised", node_id=node_id, service=service)
 
     # endregion
 

@@ -17,11 +17,7 @@ examples_dir = os.path.dirname(os.path.realpath(__file__))
 root_dir = os.path.dirname(examples_dir)
 
 # Get the path to the example scripts
-example_scripts = [
-    os.path.join(examples_dir, f)
-    for f in os.listdir(examples_dir)
-    if f.startswith('example_')
-]
+example_scripts = [os.path.join(examples_dir, f) for f in os.listdir(examples_dir) if f.startswith('example_')]
 
 # Run each example script in a separate process
 for script in example_scripts:
