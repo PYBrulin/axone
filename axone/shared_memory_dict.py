@@ -5,35 +5,21 @@ from contextlib import contextmanager
 from functools import wraps
 from multiprocessing import resource_tracker
 from multiprocessing.shared_memory import SharedMemory
-from typing import (
-    Any,
-    Dict,
-    Generator,
-    ItemsView,
-    Iterator,
-    KeysView,
-    Optional,
-    ValuesView,
-)
+from typing import Any, Dict, Generator, ItemsView, Iterator, KeysView, Optional, ValuesView
 
 from filelock import FileLock as Lock
 
-from .serializers import (
-    NULL_BYTE,
-    DeserializationError,
-    JSONSerializer,
-    SharedMemoryDictSerializer,
-)
+from .serializers import NULL_BYTE, SERIALIZERS, B64Serializer, DeserializationError, SharedMemoryDictSerializer
 
 NOT_GIVEN = object()
-DEFAULT_SERIALIZER = JSONSerializer()
+DEFAULT_SERIALIZER = B64Serializer()
 
 logger = logging.getLogger(__name__)
 
 
 def lock(func):
     @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self, *args, **kwargs) -> Any:
         # Note regarding the use of self in the decorator:
         # Decorator is applied when the function is defined, which is at class
         # creation time, not at instance creation time. To use an instance
@@ -54,10 +40,19 @@ class SharedMemoryDict:
         name: str,
         size: Optional[int] = None,
         *,
-        serializer: SharedMemoryDictSerializer = DEFAULT_SERIALIZER,
+        serializer: SharedMemoryDictSerializer | str | None = DEFAULT_SERIALIZER,
     ) -> None:
         super().__init__()
         self._serializer = serializer
+        if isinstance(self._serializer, SharedMemoryDictSerializer):
+            pass
+        elif isinstance(self._serializer, str):
+            next(
+                (self._serializer.lower().startswith(s) for s in SERIALIZERS),
+                DEFAULT_SERIALIZER,
+            )
+        else:
+            self._serializer = DEFAULT_SERIALIZER
 
         # Create lock matching shared memory name
         # This is to prevent multiple processes from accessing the same
@@ -70,9 +65,7 @@ class SharedMemoryDict:
         )
 
         # Create shared memory block
-        self._memory_block = self._get_or_create_memory_block(
-            f"sm_{name}", size
-        )
+        self._memory_block = self._get_or_create_memory_block(f"sm_{name}", size)
         self._ensure_memory_initialization()
         self._size = 0
 
@@ -80,10 +73,8 @@ class SharedMemoryDict:
     def size(self) -> int:
         return self._size
 
-    def _ensure_memory_initialization(self):
-        memory_is_not_empty = (
-            bytes(self._memory_block.buf).split(NULL_BYTE, 1)[0] == b""
-        )
+    def _ensure_memory_initialization(self) -> None:
+        memory_is_not_empty = bytes(self._memory_block.buf).split(NULL_BYTE, 1)[0] == b""
         if memory_is_not_empty:
             self._save_memory({})
 
@@ -108,7 +99,7 @@ class SharedMemoryDict:
         self._save_memory(db)
 
     @lock
-    def modify_structure(self, key_list, new_value):
+    def modify_structure(self, key_list, new_value) -> None:
         """Modify the structure of the shared memory object given a list of keys"""
         db = self._read_memory()
 
@@ -122,7 +113,7 @@ class SharedMemoryDict:
         self._save_memory(db)
 
     @lock
-    def process_lambda(self, func, *args):
+    def process_lambda(self, func, *args) -> Any:
         """Process a lambda function on the shared memory
         The function must alter the object db in-place and either return
         nothing or return a value that this function will return in turn.
@@ -133,7 +124,7 @@ class SharedMemoryDict:
         return ans
 
     def __getitem__(self, key: str) -> Any:
-        return self._read_memory()[key]
+        return self._read_memory().get(key, None)
 
     def __setitem__(self, key: str, value: Any) -> None:
         with self._modify_db() as db:
@@ -149,7 +140,7 @@ class SharedMemoryDict:
     def __iter__(self) -> Iterator:
         return iter(self._read_memory())
 
-    def __reversed__(self):
+    def __reversed__(self) -> Iterator[str]:
         return reversed(self._read_memory())
 
     def __del__(self) -> None:
@@ -195,17 +186,17 @@ class SharedMemoryDict:
     def items(self) -> ItemsView:
         return self._read_memory().items()
 
-    def pop(self, key: str, default: Optional[Any] = NOT_GIVEN):
+    def pop(self, key: str, default: Optional[Any] = NOT_GIVEN) -> Any:
         with self._modify_db() as db:
             if default is NOT_GIVEN:
                 return db.pop(key)
             return db.pop(key, default)
 
-    def update(self, other=(), /, **kwds):
+    def update(self, other=(), /, **kwds) -> None:
         with self._modify_db() as db:
             db.update(other, **kwds)
 
-    def setdefault(self, key: str, default: Optional[Any] = None):
+    def setdefault(self, key: str, default: Optional[Any] = None) -> Any:
         with self._modify_db() as db:
             return db.setdefault(key, default)
 
@@ -233,30 +224,24 @@ class SharedMemoryDict:
         # TODO: than overwriting the functions. We need to clean both the
         # TODO: shared_memory and the lock as well.
 
-        def fix_register(name, rtype):
+        def fix_register(name, rtype) -> Any | None:
             if rtype == "shared_memory":
                 return
-            return resource_tracker._resource_tracker.register(
-                self, name, rtype
-            )
+            return resource_tracker._resource_tracker.register(self, name, rtype)
 
         resource_tracker.register = fix_register
 
-        def fix_unregister(name, rtype):
+        def fix_unregister(name, rtype) -> Any | None:
             if rtype == "shared_memory":
                 return
-            return resource_tracker._resource_tracker.unregister(
-                self, name, rtype
-            )
+            return resource_tracker._resource_tracker.unregister(self, name, rtype)
 
         resource_tracker.unregister = fix_unregister
 
         if "shared_memory" in resource_tracker._CLEANUP_FUNCS:
             del resource_tracker._CLEANUP_FUNCS["shared_memory"]
 
-    def _get_or_create_memory_block(
-        self, name: str, size: Optional[int]
-    ) -> SharedMemory:
+    def _get_or_create_memory_block(self, name: str, size: Optional[int]) -> SharedMemory:
         """Get or create shared memory block"""
 
         self._remove_shm_from_resource_tracker(name)
@@ -281,11 +266,7 @@ class SharedMemoryDict:
 
         shm_file = os.path.join("/dev/shm", name)
         stat = os.stat(shm_file)
-        if (
-            stat.st_uid != os.getuid()
-            or stat.st_gid != os.getgid()
-            or stat.st_mode != 0o100600
-        ):
+        if stat.st_uid != os.getuid() or stat.st_gid != os.getgid() or stat.st_mode != 0o100600:
             os.unlink(shm_file)
 
     def _save_memory(self, db: Dict[str, Any]) -> None:
@@ -294,9 +275,7 @@ class SharedMemoryDict:
         try:
             self._memory_block.buf[: len(data)] = data
         except ValueError as exc:
-            raise ValueError(
-                f"exceeds available storage {self._size} > {self._memory_block._size}"
-            ) from exc
+            raise ValueError(f"exceeds available storage {self._size} > {self._memory_block._size}") from exc
 
     def _read_memory(self) -> Dict[str, Any]:
         try:

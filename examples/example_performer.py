@@ -1,6 +1,5 @@
 import argparse
 import logging  # noqa
-import os
 import time
 from typing import Dict, NoReturn
 
@@ -93,9 +92,7 @@ class ExampleNodePerformer:
             self.node.start()
 
             while True:
-                self.node.update_parameters(
-                    self.parameters
-                )  # Update the parameters displayed in the node info
+                self.node.update_parameters(self.parameters)  # Update the parameters displayed in the node info
                 time.sleep(1)
 
         except KeyboardInterrupt:
@@ -110,7 +107,6 @@ class ExampleNodePerformer:
 
 
 if __name__ == "__main__":
-    os.system("cls||clear")  # Clear the terminal
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--debug", action="store_true")
     argparser.add_argument("-p", "--process", action="store_true")

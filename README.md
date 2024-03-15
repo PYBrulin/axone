@@ -21,7 +21,7 @@ pip install -e .
 or using the provided wheel in the [release](https://github.com/PYBrulin/axone/releases) section:
 
 ```bash
-pip install axone-[version]-py3-none-any.whl
+pip install axone-[latest-version]-py3-none-any.whl
 ```
 
 ## Hybrid Federated Architecture

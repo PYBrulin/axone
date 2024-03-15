@@ -103,22 +103,13 @@ class CmdLine:
         if len(args) == 1:
             if args[0] in self._available_commands:
                 print("Available commands :")
-                for j, subcommand in enumerate(
-                    self._available_commands[args[0]].items()
-                ):
+                for j, subcommand in enumerate(self._available_commands[args[0]].items()):
                     if isinstance(subcommand[1], dict):
                         print(
-                            (
-                                " │ "
-                                if j
-                                < len(self._available_commands[args[0]]) - 2
-                                else " └ "
-                            ),
+                            (" │ " if j < len(self._available_commands[args[0]]) - 2 else " └ "),
                             end="",
                         )
-                        print(
-                            f"{subcommand[0]:14s} : {subcommand[1]['_help']}"
-                        )
+                        print(f"{subcommand[0]:14s} : {subcommand[1]['_help']}")
             else:
                 print(f"Unknown command '{args[0]}'")
             print("")
@@ -129,37 +120,21 @@ class CmdLine:
         for i, command in enumerate(self._available_commands.items()):
             if isinstance(command[1], dict):
                 print(
-                    (
-                        " │ "
-                        if (
-                            i < len(self._available_commands) - 1
-                            or len(command[1]) > 0
-                        )
-                        else " └ "
-                    ),
+                    (" │ " if (i < len(self._available_commands) - 1 or len(command[1]) > 0) else " └ "),
                     end="",
                 )
                 print(f"{command[0]:17s} : {command[1]['_help']}")
                 for j, subcommand in enumerate(command[1].items()):
                     if isinstance(subcommand[1], dict):
                         print(
-                            (
-                                " │ "
-                                if (
-                                    i < len(self._available_commands) - 1
-                                    or j < len(command[1]) - 2
-                                )
-                                else " └ "
-                            ),
+                            (" │ " if (i < len(self._available_commands) - 1 or j < len(command[1]) - 2) else " └ "),
                             end="",
                         )
                         print(
                             " │ " if j < len(command[1]) - 2 else " └ ",
                             end="",
                         )
-                        print(
-                            f"{subcommand[0]:14s} : {subcommand[1]['_help']}"
-                        )
+                        print(f"{subcommand[0]:14s} : {subcommand[1]['_help']}")
         print("")
 
     def clear(self, *args) -> None:
@@ -231,9 +206,7 @@ class CmdLine:
                 return
             node = self.node._memory.get("__nds", {})[_nodes]
         else:
-            print(
-                "Not enough arguments to call node info command. Usage: node info <node_name>"
-            )
+            print("Not enough arguments to call node info command. Usage: node info <node_name>")
             return
 
         for key, value in node.items():
@@ -263,17 +236,9 @@ class CmdLine:
             print(
                 f"{self.db[node].get('__n', node):^30s}"
                 + " │ "
-                + (
-                    f"{len(self.db[node].get('__p', {})):^10d}"
-                    if self.db[node].get('__p', {})
-                    else f"{'':^10s}"
-                )
+                + (f"{len(self.db[node].get('__p', {})):^10d}" if self.db[node].get('__p', {}) else f"{'':^10s}")
                 + " │ "
-                + (
-                    f"{len(self.db[node].get('__s', {})):^10d}"
-                    if self.db[node].get('__s', {})
-                    else f"{'':^10s}"
-                )
+                + (f"{len(self.db[node].get('__s', {})):^10d}" if self.db[node].get('__s', {}) else f"{'':^10s}")
             )
 
     # endregion
@@ -287,11 +252,7 @@ class CmdLine:
         """Display the list of topics"""
         # Topics are all the keys in the memory except the ones starting with "__"
         self.db = dict(self.node._memory)
-        topics = [
-            topic
-            for topic in self.db.keys()
-            if not topic.startswith("__") and topic != "nodes"
-        ]
+        topics = [topic for topic in self.db.keys() if not topic.startswith("__") and topic != "nodes"]
         if len(topics) == 0:
             print("No topics published")
             return
@@ -303,9 +264,7 @@ class CmdLine:
                 print(f"{topic}" + "─" * (20 - len(topic) + 1) + "┐")
 
                 # Iterate over the subkeys sorted by keys
-                for i, (subkey, subvalue) in enumerate(
-                    sorted(value.items(), key=lambda item: item[0])
-                ):
+                for i, (subkey, subvalue) in enumerate(sorted(value.items(), key=lambda item: item[0])):
                     # Skip the rate
                     if subkey == "__r":
                         continue
@@ -317,14 +276,10 @@ class CmdLine:
 
                     if subkey == "__t":
                         print(f"{'Last publication':17s} : ", end="")
-                        print(
-                            f"{round(time.time() - subvalue, 3)} s ago", end=""
-                        )
+                        print(f"{round(time.time() - subvalue, 3)} s ago", end="")
                         print(f" ({value.get('__r', -1)} Hz)")
                     elif subkey == '__s':
-                        print(
-                            f"{'Publisher':17s} : {self.db['__nds'][subvalue]['__n']}"
-                        )
+                        print(f"{'Publisher':17s} : {self.db['__nds'][subvalue]['__n']}")
                     else:
                         print(f"{subkey:17s} : {subvalue}")
             else:
@@ -379,8 +334,7 @@ class CmdLine:
                         time.sleep(
                             max(
                                 0,
-                                1 / float(rate)
-                                - max(0, time.time() - timestamp),
+                                1 / float(rate) - max(0, time.time() - timestamp),
                             )
                         )
                     else:
@@ -419,9 +373,7 @@ class CmdLine:
                 print(f"{key}")
                 for i, (subkey, subvalue) in enumerate(value.items()):
                     print(" │ " if i < len(value) - 1 else " └ ", end="")
-                    print(
-                        f"{subkey}({', '.join([f'{sk}: {sv}' for sk, sv in subvalue.items()])})"
-                    )
+                    print(f"{subkey}({', '.join([f'{sk}: {sv}' for sk, sv in subvalue.items()])})")
             else:
                 print(f"{key:20s} : {value}")
 
@@ -449,21 +401,16 @@ class CmdLine:
         if destination_node_id is None:
             print(f"Unknown node '{args[0]}'")
             return
-        destination_node = self.node._memory.get("__nds", {})[
-            destination_node_id
-        ]
+        destination_node = self.node._memory.get("__nds", {})[destination_node_id]
 
         # Get the service name and arguments
         service_name, service_args = args[1].split("=", 1)
-        print(
-            f"Calling service '{service_name}' on node '{destination_node}' with arguments '{service_args}'"
-        )
+        print(f"Calling service '{service_name}' on node '{destination_node}' with arguments '{service_args}'")
 
         # Check if the service has been advertised by the destination node
         if service_name not in destination_node.get("__s", {}):
             print(
-                f"Service '{service_name}' is not registered on node '{destination_node}'. "
-                + "But it will be called anyway."
+                f"Service '{service_name}' is not registered on node '{destination_node}'. " + "But it will be called anyway."
             )
 
         # Call the service
@@ -515,9 +462,9 @@ class CmdLine:
         except KeyboardInterrupt:
             print("Interrupted")
             return
-        except Exception as e:
-            print(e)
-            return
+        # except Exception as e:
+        #     print(e)
+        #     return
 
     def main(self) -> None:
         try:
@@ -543,18 +490,12 @@ class CmdLine:
                 # Execute command
                 if command[0] in self._available_commands:
                     if "_cb" in self._available_commands[command[0]]:
-                        self._available_commands[command[0]]["_cb"](
-                            command[1:]
-                        )
+                        self._available_commands[command[0]]["_cb"](command[1:])
                     elif len(command) >= 2:
                         if command[1] in self._available_commands[command[0]]:
-                            self._available_commands[command[0]][command[1]][
-                                "_cb"
-                            ](command[2:])
+                            self._available_commands[command[0]][command[1]]["_cb"](command[2:])
                         else:
-                            print(
-                                f"Unknown subcommand '{command[1]}' for command '{command[0]}'"
-                            )
+                            print(f"Unknown subcommand '{command[1]}' for command '{command[0]}'")
                     else:
                         # Provide help for the specified command
                         self.help([command[0]])

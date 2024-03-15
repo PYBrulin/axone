@@ -11,7 +11,7 @@ from .shared_memory_dict import SharedMemoryDict
 
 DEFAULT_TIMEOUT = 5
 MAX_RETRIES = 10
-TIMESTAMP_PRECISION = 3
+TIMESTAMP_PRECISION = 0
 TIMESTAMP_RANGE = 60 * 60 * 24 * 365  # 1 year
 
 
@@ -49,18 +49,15 @@ class Node:
                         # Merge the config file with the kwargs
                         kwargs = {**kwargs, **json.load(f)}
                     except Exception:
-                        raise ValueError(
-                            f"Config file {self.config_file} is not a valid json file."
-                        )
+                        raise ValueError(f"Config file {self.config_file} is not a valid json file.")
             else:
-                raise FileNotFoundError(
-                    f"Config file {self.config_file} does not exist."
-                )
+                raise FileNotFoundError(f"Config file {self.config_file} does not exist.")
 
         # Node parameters
         self._name = name
         self._memory_endpoint = kwargs.get("memory_endpoint", "")
         self._memory_size = kwargs.get("memory_size", None)
+        self._memory_serializer = kwargs.get("memory_serializer", None)
 
         # Check for required parameters
         if self.name == "":
@@ -73,15 +70,11 @@ class Node:
 
         # services parameters
         self._services = kwargs.get("services", None)
-        self._service_server_rate = 1 / float(
-            kwargs.get("service_server_rate", 10)
-        )
+        self._service_server_rate = 1 / float(kwargs.get("service_server_rate", 10))
         self._hide_services = kwargs.get("hide_services", False)
 
         # Timestamp parameters
-        self._timestamp_precision = kwargs.get(
-            "timestamp_precision", TIMESTAMP_PRECISION
-        )
+        self._timestamp_precision = kwargs.get("timestamp_precision", TIMESTAMP_PRECISION)
         self._timestamp_range = kwargs.get("timestamp_range", TIMESTAMP_RANGE)
 
         # Store the kwargs for later use
@@ -96,22 +89,18 @@ class Node:
         self._subscriptions: Dict[str, Node.Subscription] = {}
         self._services_map: Dict[str, Callable] = {}
 
-        self._last_federation_time = (
-            0  # The time at which the memory was last federated.
-        )
-        self._last_services_time = (
-            0  # The time at which the services were last checked.
-        )
-        self._cleanup_time = (
-            0  # The time at which the memory was last cleaned up.
-        )
+        self._last_federation_time = 0  # The time at which the memory was last federated.
+        self._last_services_time = 0  # The time at which the services were last checked.
+        self._cleanup_time = 0  # The time at which the memory was last cleaned up.
         # Setting it to 0 will force the memory to be cleaned up instantly on
         # the first iteration of the loop
 
     def start(self) -> None:
         # Initialize the shared memory
         self._memory = SharedMemoryDict(
-            name=self.memory_endpoint, size=self.memory_size
+            name=self.memory_endpoint,
+            size=self.memory_size,
+            serializer=self._memory_serializer,
         )
 
         # Register node on the memory
@@ -254,9 +243,7 @@ class Node:
             if message is not None and message != self._last_message:
                 self._last_message = message
                 message = {
-                    key: value
-                    for key, value in message.items()
-                    if not key.startswith("__")
+                    key: value for key, value in message.items() if not key.startswith("__")
                 }  # Remove internal data structures
 
         @property
@@ -313,9 +300,7 @@ class Node:
 
     def get_node_id(self) -> str:
         """Generate a unique node id."""
-        return "".join(
-            random.choices(string.ascii_letters + string.digits, k=10)
-        )
+        return "".join(random.choices(string.ascii_letters + string.digits, k=10))
 
     def get_timestamp(self) -> int | float:
         """Output a formatted timestamp."""
@@ -325,12 +310,10 @@ class Node:
         # Idea base the timestamp on the oldest node in the memory.
         # And reduce the floating point precision to 3 digits
         return round(
-            time.time(),  # TODO: % self._timestamp_range,
+            time.perf_counter(),  # TODO: % self._timestamp_range,
             (
-                self._timestamp_precision
-                if self._timestamp_precision > 0
-                else None
-            ),  # If ndigits is None round() converts to int
+                self._timestamp_precision if self._timestamp_precision > 0 else None
+            ),  # Note: If ndigits is None round() converts to int directly
         )
 
     def _register_node(self) -> None:
@@ -339,9 +322,7 @@ class Node:
 
         # Register node within __nds if not already registered
         while self.node_id in self._memory.get("__nds", default={}):
-            self.logger.warning(
-                f"Node {self.node_id} already registered on the memory."
-            )
+            self.logger.warning(f"Node {self.node_id} already registered on the memory.")
             self._node_id = self.get_node_id()
 
         _db = self._memory.get("__nds", default={})
@@ -416,9 +397,9 @@ class Node:
                 break
 
     def _server_exec(self) -> None:
-        if time.time() - self._last_federation_time > 1:
+        if time.perf_counter() - self._last_federation_time > 1:
             # TODO: Group this in a dedicated function
-            self._last_federation_time = time.time()
+            self._last_federation_time = time.perf_counter()
 
             # Update the heartbeat in the Node structure
             self._memory.modify_structure(
@@ -426,20 +407,15 @@ class Node:
                 self._timestamp,
             )
 
-            self.logger.debug(
-                f"Updating heartbeat for node {self.node_id}:{self.name}."
-            )
+            self.logger.debug(f"Updating heartbeat for node {self.node_id}:{self.name}.")
 
             if self._timestamp > self._cleanup_time:
                 self._cleanup_time = self._timestamp + DEFAULT_TIMEOUT
                 self._cleanup_memory()
 
         if self.services is not None:
-            if (
-                time.time() - self._last_services_time
-                > self.service_server_rate
-            ):
-                self._last_services_time = time.time()
+            if time.perf_counter() - self._last_services_time > self.service_server_rate:
+                self._last_services_time = time.perf_counter()
                 self._listen_service()
 
         if self.subscriptions:
@@ -474,11 +450,7 @@ class Node:
         Modifies the db object in place.
         """
         nodes = db.get("__nds", {})
-        nodes = {
-            node_id: node
-            for node_id, node in nodes.items()
-            if node.get("__t", 0) + DEFAULT_TIMEOUT > self._timestamp
-        }
+        nodes = {node_id: node for node_id, node in nodes.items() if node.get("__t", 0) + DEFAULT_TIMEOUT > self._timestamp}
         db["__nds"] = nodes
 
     def _clear_stale_topics(self, db: Dict[str, Any]) -> None:
@@ -493,10 +465,7 @@ class Node:
                 # Skip internal data strtuctures
                 continue
             if message.get("__s", None) not in db.get("__nds", {}).keys() or (
-                message.get("__t", float("inf"))
-                + 1 / float(message.get("__r", 1))
-                + DEFAULT_TIMEOUT
-                < self._timestamp
+                message.get("__t", float("inf")) + 1 / float(message.get("__r", 1)) + DEFAULT_TIMEOUT < self._timestamp
             ):
                 # Remove the topic
                 self.logger.debug(f"Removing topic {topic} from the memory.")
@@ -504,9 +473,7 @@ class Node:
         for topic in to_remove:
             db.pop(topic)
 
-    def _clear_stale_services(
-        self, db: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+    def _clear_stale_services(self, db: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Clear stale services.
         Lambda function to be used with the process_lambda function.
@@ -518,12 +485,7 @@ class Node:
         services = db.get("__srv", [])
         if not services:
             return db
-        services = [
-            service
-            for service in services
-            if service.get("__t", float('inf')) + DEFAULT_TIMEOUT
-            > self._timestamp
-        ]
+        services = [service for service in services if service.get("__t", float('inf')) + DEFAULT_TIMEOUT > self._timestamp]
 
         # If services is empty, then remove the __srv key from the memory
         if not services:
@@ -538,9 +500,7 @@ class Node:
 
     def publish_rate(self, topic: str, message: Any, rate: float = 0) -> None:
         """Register a publisher for a topic."""
-        logging.debug(
-            f"Registering publisher {topic} for node {self.node_id}:{self.name}."
-        )
+        logging.debug(f"Registering publisher {topic} for node {self.node_id}:{self.name}.")
         # Create a new publisher
         self.publishers[topic] = Node.Publisher()
         self.publishers[topic].topic = topic
@@ -567,9 +527,7 @@ class Node:
             "__s": self.node_id,
             "__t": self._timestamp,
         }
-        if (
-            rate is not None
-        ):  # Do not add rate if it is published once or rate is unknown
+        if rate is not None:  # Do not add rate if it is published once or rate is unknown
             properties["__r"] = rate
 
         # Check if the topic is available
@@ -577,17 +535,14 @@ class Node:
             # Topic is available
             self._memory[topic] = message | properties
         elif (
-            self._memory.get(topic, default={}).get("__t", 0)
-            + self._memory.get(topic, default={}).get("__r", 0)
+            self._memory.get(topic, default={}).get("__t", 0) + self._memory.get(topic, default={}).get("__r", 0)
             < self._timestamp + DEFAULT_TIMEOUT
         ):
             # Topic is available after timeout
             self._memory[topic] = message | properties
         else:
             # Topic is not available
-            self.logger.error(
-                f"Topic {topic} is not available for node {self.node_id}:{self.name} to publish."
-            )
+            self.logger.error(f"Topic {topic} is not available for node {self.node_id}:{self.name} to publish.")
 
     def publish_once(
         self,
@@ -606,11 +561,7 @@ class Node:
         """Function called periodically to publish messages."""
         for topic in self.publishers:
             # Check if it is time to publish
-            if (
-                self._timestamp
-                > float(1 / self.publishers[topic].rate)
-                + self.publishers[topic].last_update
-            ):
+            if self._timestamp > float(1 / self.publishers[topic].rate) + self.publishers[topic].last_update:
                 # Publish the message
                 self._publish_once(
                     topic,
@@ -621,7 +572,7 @@ class Node:
                     ),
                     self.publishers[topic].rate,
                 )
-                self.publishers[topic].last_update = time.time()
+                self.publishers[topic].last_update = time.perf_counter()
 
     # endregion
 
@@ -636,38 +587,25 @@ class Node:
             self.subscriptions[topic].rate = -1
             self.subscriptions[topic].last_message = None
             self.subscriptions[topic].callbacks.append(callback)
-            logging.debug(
-                f"Registering subscription {topic} for node {self.node_id}:{self.name}."
-            )
+            logging.debug(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
         else:
             # Add the callback to the existing subscription
             self.subscriptions[topic].callbacks.append(callback)
-            logging.debug(
-                f"Adding callback to subscription {topic} for node {self.node_id}:{self.name}."
-            )
+            logging.debug(f"Adding callback to subscription {topic} for node {self.node_id}:{self.name}.")
 
     def _listen_subscriptions(self) -> None:
         """Function called periodically to listen to topics."""
         for topic in self.subscriptions:
-            if time.time() - self.subscriptions[topic].last_update > float(
-                1 / self.subscriptions[topic].rate
-            ):
+            if time.perf_counter() - self.subscriptions[topic].last_update > float(1 / self.subscriptions[topic].rate):
                 message = self._listen_for_topic(topic)
-                if (
-                    message
-                    and message != self.subscriptions[topic].last_message
-                ):
+                if message and message != self.subscriptions[topic].last_message:
                     # Update the subscription properties on reception of a message
                     self.subscriptions[topic].last_message = message
-                    self.subscriptions[topic].last_update = message.get(
-                        "__t", 0
-                    )
+                    self.subscriptions[topic].last_update = message.get("__t", 0)
 
                     # Format the message
                     message = {
-                        key: value
-                        for key, value in message.items()
-                        if not key.startswith("__")
+                        key: value for key, value in message.items() if not key.startswith("__")
                     }  # Remove internal data structures
 
                     # Call the callback
@@ -687,9 +625,7 @@ class Node:
         db = self._memory.get(topic, default={})
 
         # return the db without the internal data structures
-        return {
-            key: value for key, value in db.items() if not key.startswith("__")
-        }
+        return {key: value for key, value in db.items() if not key.startswith("__")}
 
     def listen_once(self, topic: str) -> Dict[str, Any]:
         """Listen to a topic once."""
@@ -750,16 +686,10 @@ class Node:
                     self._services_map[service] = self.services[service]
                     _services[service] = self.services[service]
                 else:
-                    raise TypeError(
-                        f"service {service} is not a string or a function."
-                    )
+                    raise TypeError(f"service {service} is not a string or a function.")
 
             # Inform the memory of the services available for this node
-            db = (
-                self._memory.get("__nds", default={})
-                if database is None
-                else database
-            )
+            db = self._memory.get("__nds", default={}) if database is None else database
 
             if not self.hide_services:
                 # Advertise the services available for this node
@@ -770,9 +700,7 @@ class Node:
 
     def _split_services_db(self, db: Dict[str, Any], dst) -> list[Any]:
         services = db.get("__srv", [])
-        service_buffer, services = [
-            x for x in services if x["__dst"] == dst
-        ], [x for x in services if x["__dst"] != dst]
+        service_buffer, services = [x for x in services if x["__dst"] == dst], [x for x in services if x["__dst"] != dst]
         if services:
             db["__srv"] = services
         elif "__srv" in db.keys():
@@ -789,9 +717,7 @@ class Node:
 
         if "__srv" in self._memory.keys():
             # Fetch and remove all services directed to this node from the memory
-            service_buffer = self._memory.process_lambda(
-                self._split_services_db, self.node_id
-            )
+            service_buffer = self._memory.process_lambda(self._split_services_db, self.node_id)
 
             if service_buffer:
                 self.logger.debug(
@@ -829,10 +755,7 @@ class Node:
                         response = callback(**service[callback.__name__])
 
                         # If the service has a response, then send the response back to the source node
-                        if (
-                            response is not None
-                            and service.get("__ans", None) is not None
-                        ):
+                        if response is not None and service.get("__ans", None) is not None:
                             self._call_service(
                                 dest_node_id=service.get("__src"),
                                 service=service.get("__ans"),
@@ -862,17 +785,13 @@ class Node:
         #  responsible for checking if the service is available or not.
 
         if dest_node_id is None and dest_node_name is None:
-            self.logger.error(
-                "Either dest_node_id or dest_node_name must be specified."
-            )
+            self.logger.error("Either dest_node_id or dest_node_name must be specified.")
             return
 
         if dest_node_id is None and dest_node_name is not None:
             dest_node_id = self._find_node_by_name(dest_node_name)
 
-        if dest_node_id in self._memory.get(
-            "__nds", {}
-        ):  # Check if at least one node with the same name exists
+        if dest_node_id in self._memory.get("__nds", {}):  # Check if at least one node with the same name exists
             if not self._is_service_advertised(dest_node_id, service):
                 # service is not available
                 # No need to call the service
@@ -916,9 +835,7 @@ class Node:
             )
         else:
             # service is not available
-            self.logger.error(
-                f"No node with name {dest_node_id} was found to call service {service}."
-            )
+            self.logger.error(f"No node with name {dest_node_id} was found to call service {service}.")
 
     def call_service(
         self,
@@ -979,13 +896,7 @@ class Node:
 
     def _is_service_advertised(self, node_id: str, service: str) -> bool:
         """Check if an service is advertised by a node."""
-        return (
-            self._memory.get("__nds", {})
-            .get(node_id, {})
-            .get("__s", {})
-            .get(service, {})
-            != {}
-        )
+        return self._memory.get("__nds", {}).get(node_id, {}).get("__s", {}).get(service, {}) != {}
 
     def is_service_advertised(self, node_id: str, service: str) -> bool:
         """Check if an service is advertised by a node."""
@@ -1002,9 +913,7 @@ class Node:
         """Update node parameters."""
         self._memory.process_lambda(self.__update_parameters, parameters)
 
-    def __update_parameters(
-        self, db: Dict[str, Any], parameters: Dict[str, Any]
-    ) -> None:
+    def __update_parameters(self, db: Dict[str, Any], parameters: Dict[str, Any]) -> None:
         """
         Update node parameters.
         Lambda function to be used with the process_lambda function.

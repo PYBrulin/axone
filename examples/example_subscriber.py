@@ -1,6 +1,5 @@
 import argparse
 import logging  # noqa
-import os
 import time
 from typing import NoReturn
 
@@ -44,9 +43,7 @@ class ExampleNodeSubscriber:
         try:
             self.node.subscribe("topic_published_once", callback=self.print)
             self.node.subscribe("topic_published_rate", callback=self.print)
-            self.node.subscribe(
-                "topic_published_rate_func", callback=self.print
-            )
+            self.node.subscribe("topic_published_rate_func", callback=self.print)
 
             # Note start the node after registering the subscribers
             # Which is a requirement for the NodeProcess variant
@@ -68,7 +65,6 @@ class ExampleNodeSubscriber:
 
 
 if __name__ == "__main__":
-    os.system("cls||clear")  # Clear the terminal
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--debug", action="store_true")
     argparser.add_argument("-p", "--process", action="store_true")

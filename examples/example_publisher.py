@@ -1,6 +1,5 @@
 import argparse
 import logging
-import os
 import time
 from typing import NoReturn
 
@@ -36,9 +35,7 @@ class ExampleNodePublisher:
             )
 
     def publish_actualization(self) -> None:
-        return {
-            "message": f"Hello from topic_published_rate_func {time.time()}"
-        }  # Return a dictionary
+        return {"message": f"Hello from topic_published_rate_func {time.time()}"}  # Return a dictionary
 
     def run(self) -> NoReturn:
         try:
@@ -66,9 +63,7 @@ class ExampleNodePublisher:
                     "topic_published_once",
                     {"message": f"Hello from topic_published_once {counter}"},
                 )
-                logging.info(
-                    f"Published message to topic_published_once : {counter}"
-                )
+                logging.info(f"Published message to topic_published_once : {counter}")
 
                 counter += 1
 
@@ -88,7 +83,6 @@ class ExampleNodePublisher:
 
 
 if __name__ == "__main__":
-    os.system("cls||clear")  # Clear the terminal
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--debug", action="store_true")
     argparser.add_argument("-p", "--process", action="store_true")

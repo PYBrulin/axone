@@ -1,7 +1,6 @@
 import argparse
 import logging  # noqa
 import math
-import os
 import time
 from typing import NoReturn
 
@@ -51,10 +50,7 @@ class ExampleNodeActuator:
         zx: float,
     ) -> None:
         """Receive the response of the service "move" which is the sum of the parameters x+y, y+z, z+x"""
-        print(
-            "Received a response from move: "
-            + f"x+y = {xy}, y+z = {yz}, z+x = {zx}"
-        )
+        print("Received a response from move: " + f"x+y = {xy}, y+z = {yz}, z+x = {zx}")
 
     def run(self) -> NoReturn:
         try:
@@ -64,16 +60,12 @@ class ExampleNodeActuator:
 
             while True:
                 # Try to find the node "example_performer" in the network
-                target_node_id = self.node.find_node_by_name(
-                    "example_performer"
-                )
+                target_node_id = self.node.find_node_by_name("example_performer")
                 if not target_node_id:
                     print("Target node not found")
                 else:  # Found the target node
                     # List the available services of the target node
-                    print(
-                        f"Available services of {target_node_id}: {self.node.list_node_services(target_node_id)}"
-                    )
+                    print(f"Available services of {target_node_id}: {self.node.list_node_services(target_node_id)}")
                     # Call the service "print" of the target node
                     print("Calling service print")
                     self.node.call_service(
@@ -94,29 +86,19 @@ class ExampleNodeActuator:
                             dest_node_id=target_node_id,
                             service="move",
                             answer=self.move_response,
-                            x=round(
-                                math.sin(10 * time.time() * math.pi / 180), 4
-                            ),
+                            x=round(math.sin(10 * time.time() * math.pi / 180), 4),
                             y=round(
-                                math.sin(
-                                    10 * time.time() * math.pi / 180
-                                    + math.pi * 1 / 3
-                                ),
+                                math.sin(10 * time.time() * math.pi / 180 + math.pi * 1 / 3),
                                 4,
                             ),
                             z=round(
-                                math.sin(
-                                    10 * time.time() * math.pi / 180
-                                    + math.pi * 2 / 3
-                                ),
+                                math.sin(10 * time.time() * math.pi / 180 + math.pi * 2 / 3),
                                 4,
                             ),
                         )
                         print("Called service move")
 
-                    print(
-                        f"Parameters of {target_node_id}: {self.node.get_parameters(target_node_id)}"
-                    )
+                    print(f"Parameters of {target_node_id}: {self.node.get_parameters(target_node_id)}")
 
                     if not self.use_process:
                         print(f"Memory size : {self.node._memory.size}")
@@ -134,7 +116,6 @@ class ExampleNodeActuator:
 
 
 if __name__ == "__main__":
-    os.system("cls||clear")  # Clear the terminal
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--debug", action="store_true")
     argparser.add_argument("-p", "--process", action="store_true")
