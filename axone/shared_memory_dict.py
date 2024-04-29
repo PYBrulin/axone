@@ -60,7 +60,7 @@ class SharedMemoryDict:
         self._lock = Lock(
             os.path.join(
                 os.path.expanduser("~"),
-                f"{name}.axone.lock",
+                f".{name}.axone.lock",
             )
         )
 
@@ -82,6 +82,11 @@ class SharedMemoryDict:
         if not hasattr(self, "_memory_block"):
             return
         self._memory_block.close()
+
+    def remove(self) -> None:
+        self.cleanup()
+        self._memory_block.unlink()
+        os.remove(self._lock.lock_file)
 
     @lock
     def clear(self) -> None:

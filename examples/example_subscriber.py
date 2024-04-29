@@ -19,8 +19,9 @@ class ExampleNodeSubscriber:
     """
 
     def __init__(self, use_process: bool = False) -> None:
+        self.use_process = use_process
         # Register node
-        if not use_process:
+        if not self.use_process:
             self.node = Node(
                 name="example_subscriber",
                 memory_endpoint="ExampleNodeMemory",

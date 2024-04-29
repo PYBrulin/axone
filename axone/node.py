@@ -1,11 +1,12 @@
 import json
 import logging
 import os
-import random
-import string
-import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Union
+
+from axone.publisher import Publisher
+from axone.subscriber import Subscription
+from axone.utils import generate_uuid, get_timestamp
 
 from .shared_memory_dict import SharedMemoryDict
 
@@ -82,11 +83,11 @@ class Node:
         self.kwargs = kwargs
 
         # Generate a unique node id
-        self._node_id = self.get_node_id()
+        self._node_id = generate_uuid(self._name)
 
         # Lists of publishers, subscribers and services
-        self._publishers: Dict[str, Node.Publisher] = {}
-        self._subscriptions: Dict[str, Node.Subscription] = {}
+        self._publishers: Dict[str, Publisher] = {}
+        self._subscriptions: Dict[str, Subscription] = {}
         self._services_map: Dict[str, Callable] = {}
 
         self._last_federation_time = 0  # The time at which the memory was last federated.
@@ -94,6 +95,10 @@ class Node:
         self._cleanup_time = 0  # The time at which the memory was last cleaned up.
         # Setting it to 0 will force the memory to be cleaned up instantly on
         # the first iteration of the loop
+
+    def __del__(self) -> None:
+        """Delete the node."""
+        self.shutdown()
 
     def start(self) -> None:
         # Initialize the shared memory
@@ -111,6 +116,7 @@ class Node:
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._executor.submit(self._server)
 
+    # region properties
     @property
     def node_id(self) -> str:
         """Return the node id."""
@@ -160,45 +166,6 @@ class Node:
         self._parameters = parameters
         self.kwargs["parameters"] = parameters
 
-    class Publisher:
-        def __init__(self) -> None:
-            self._topic: str = ""
-            self._rate: float = -1
-            self._last_update: float = 0
-            self._content: Any = None
-
-        @property
-        def topic(self) -> str:
-            return self._topic
-
-        @topic.setter
-        def topic(self, topic: str) -> None:
-            self._topic = topic
-
-        @property
-        def rate(self) -> float:
-            return self._rate
-
-        @rate.setter
-        def rate(self, rate: float) -> None:
-            self._rate = rate
-
-        @property
-        def last_update(self) -> float:
-            return self._last_update
-
-        @last_update.setter
-        def last_update(self, last_update: float) -> None:
-            self._last_update = last_update
-
-        @property
-        def content(self) -> Any:
-            return self._content
-
-        @content.setter
-        def content(self, content: Any) -> None:
-            self._content = content
-
     @property
     def publishers(self) -> Dict[str, Publisher]:
         """Return the node publishers."""
@@ -209,58 +176,6 @@ class Node:
         """Set the node publishers."""
         self._publishers = publishers
         self.kwargs["publishers"] = publishers
-
-    class Subscription:
-        def __init__(self) -> None:
-            self._topic: str = ""
-            self._rate: float = -1
-            self._last_message = None
-            self._last_update: float = 0
-            self._callbacks = []
-
-        @property
-        def topic(self) -> str:
-            return self._topic
-
-        @topic.setter
-        def topic(self, topic: str) -> None:
-            self._topic = topic
-
-        @property
-        def rate(self) -> float:
-            return self._rate
-
-        @rate.setter
-        def rate(self, rate: float) -> None:
-            self._rate = rate
-
-        @property
-        def last_message(self) -> Any | None:
-            return self._last_message
-
-        @last_message.setter
-        def last_message(self, message) -> None:
-            if message is not None and message != self._last_message:
-                self._last_message = message
-                message = {
-                    key: value for key, value in message.items() if not key.startswith("__")
-                }  # Remove internal data structures
-
-        @property
-        def last_update(self) -> float:
-            return self._last_update
-
-        @last_update.setter
-        def last_update(self, last_update: float) -> None:
-            self._last_update = last_update
-
-        @property
-        def callbacks(self) -> List[Callable]:
-            return self._callbacks
-
-        def call(self, message) -> None:
-            for callback in self._callbacks:
-                callback(message)
 
     @property
     def subscriptions(self) -> Dict[str, Subscription]:
@@ -296,34 +211,17 @@ class Node:
 
     @property
     def _timestamp(self) -> int | float:
-        return self.get_timestamp()
+        return get_timestamp()
 
-    def get_node_id(self) -> str:
-        """Generate a unique node id."""
-        return "".join(random.choices(string.ascii_letters + string.digits, k=10))
-
-    def get_timestamp(self) -> int | float:
-        """Output a formatted timestamp."""
-        # TODO:Limit the range of the timestamp.
-        # TODO:Currently Assume that the timestamp can not be older than 1 year.
-        # TODO:This will prevent the timestamp from taking too much space in the memory.
-        # Idea base the timestamp on the oldest node in the memory.
-        # And reduce the floating point precision to 3 digits
-        return round(
-            time.perf_counter(),  # TODO: % self._timestamp_range,
-            (
-                self._timestamp_precision if self._timestamp_precision > 0 else None
-            ),  # Note: If ndigits is None round() converts to int directly
-        )
+    # endregion properties
 
     def _register_node(self) -> None:
         """Register node on the memory."""
         # TODO:  https://stackoverflow.com/questions/16676177/setting-an-item-in-nested-dictionary-with-setitem
 
         # Register node within __nds if not already registered
-        while self.node_id in self._memory.get("__nds", default={}):
+        if self.node_id in self._memory.get("__nds", default={}):
             self.logger.warning(f"Node {self.node_id} already registered on the memory.")
-            self._node_id = self.get_node_id()
 
         _db = self._memory.get("__nds", default={})
 
@@ -361,6 +259,10 @@ class Node:
         # Close connection to the shared memory for this node only
         self._memory.shm.close()
 
+        # Clean all the publishers shared memory
+        for topic in self.publishers:
+            self.publishers[topic].shutdown()
+
     # region Federated server functions
 
     def _server(self) -> None:
@@ -397,9 +299,9 @@ class Node:
                 break
 
     def _server_exec(self) -> None:
-        if time.perf_counter() - self._last_federation_time > 1:
+        if get_timestamp() - self._last_federation_time > 1:
             # TODO: Group this in a dedicated function
-            self._last_federation_time = time.perf_counter()
+            self._last_federation_time = get_timestamp()
 
             # Update the heartbeat in the Node structure
             self._memory.modify_structure(
@@ -414,8 +316,8 @@ class Node:
                 self._cleanup_memory()
 
         if self.services is not None:
-            if time.perf_counter() - self._last_services_time > self.service_server_rate:
-                self._last_services_time = time.perf_counter()
+            if get_timestamp() - self._last_services_time > self.service_server_rate:
+                self._last_services_time = get_timestamp()
                 self._listen_service()
 
         if self.subscriptions:
@@ -498,16 +400,6 @@ class Node:
 
     # region Publisher functions
 
-    def publish_rate(self, topic: str, message: Any, rate: float = 0) -> None:
-        """Register a publisher for a topic."""
-        logging.debug(f"Registering publisher {topic} for node {self.node_id}:{self.name}.")
-        # Create a new publisher
-        self.publishers[topic] = Node.Publisher()
-        self.publishers[topic].topic = topic
-        self.publishers[topic].content = message
-        self.publishers[topic].rate = rate
-        self.publishers[topic].last_update = 0
-
     def _publish_once(
         self,
         topic: str,
@@ -515,34 +407,14 @@ class Node:
         rate: Optional[Union[int, float]] = None,
     ) -> None:
         """Publish a message once on a topic."""
-        # Ensure the topic is available
-        # Compare the topic source with the node id
-        # If the topic source is the node id, then the topic is available to this node
-        # Else, the topic is not available to this node, then check if the topic hs reached a timeout
-        # If the topic has reached a timeout, then the topic is available to this node
-        # Else, the topic is not available to this node
-
-        # Add properties
-        properties = {
-            "__s": self.node_id,
-            "__t": self._timestamp,
-        }
-        if rate is not None:  # Do not add rate if it is published once or rate is unknown
-            properties["__r"] = rate
-
-        # Check if the topic is available
-        if self._memory.get(topic, default={}).get("__s") == self.node_id:
-            # Topic is available
-            self._memory[topic] = message | properties
-        elif (
-            self._memory.get(topic, default={}).get("__t", 0) + self._memory.get(topic, default={}).get("__r", 0)
-            < self._timestamp + DEFAULT_TIMEOUT
-        ):
-            # Topic is available after timeout
-            self._memory[topic] = message | properties
+        # Find the publisher in the publishers list
+        if topic in self.publishers:
+            self.publishers[topic].publish(message, self.node_id)
         else:
-            # Topic is not available
-            self.logger.error(f"Topic {topic} is not available for node {self.node_id}:{self.name} to publish.")
+            # Create a new publisher
+            self.publishers[topic] = Publisher(topic, rate)
+            self.publishers[topic].content = message
+            self.publishers[topic].last_timestamp = 0
 
     def publish_once(
         self,
@@ -561,7 +433,11 @@ class Node:
         """Function called periodically to publish messages."""
         for topic in self.publishers:
             # Check if it is time to publish
-            if self._timestamp > float(1 / self.publishers[topic].rate) + self.publishers[topic].last_update:
+            if self.publishers[topic].rate is None:
+                # This is a one-time publisher, so skip
+                continue
+
+            if self._timestamp > float(1 / self.publishers[topic].rate) + self.publishers[topic].last_timestamp:
                 # Publish the message
                 self._publish_once(
                     topic,
@@ -572,20 +448,37 @@ class Node:
                     ),
                     self.publishers[topic].rate,
                 )
-                self.publishers[topic].last_update = time.perf_counter()
+
+    def publish_rate(self, topic: str, message: Any, rate: float = 0) -> None:
+        """Register a publisher for a topic."""
+        logging.info(f"Registering publisher {topic} for node {self.node_id}:{self.name}.")
+        # Create a new publisher
+        self.publishers[topic] = Publisher(topic, rate)
+        self.publishers[topic].content = message
+        self.publishers[topic].last_timestamp = 0
 
     # endregion
 
     # region Subscriber functions
+    def _listen_once(self, topic: str) -> Dict[str, Any] | None:
+        """Listen to a topic once."""
+        # Find the topic in the subscriptions list
+        if topic in self.subscriptions:
+            self.subscriptions[topic].listen()
+            return self.subscriptions[topic].message
+        else:
+            return None
+
+    def listen_once(self, topic: str) -> Dict[str, Any] | None:
+        """Listen to a topic once."""
+        return self._listen_once(topic)
+
     def subscribe(self, topic: str, callback: Callable) -> None:
         """Subscribe to a topic."""
         # Add the callback to the list of callbacks for this topic
         if topic not in self.subscriptions:
             # Create a new subscription
-            self.subscriptions[topic] = Node.Subscription()
-            self.subscriptions[topic].topic = topic
-            self.subscriptions[topic].rate = -1
-            self.subscriptions[topic].last_message = None
+            self.subscriptions[topic] = Subscription(topic)
             self.subscriptions[topic].callbacks.append(callback)
             logging.debug(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
         else:
@@ -596,40 +489,24 @@ class Node:
     def _listen_subscriptions(self) -> None:
         """Function called periodically to listen to topics."""
         for topic in self.subscriptions:
-            if time.perf_counter() - self.subscriptions[topic].last_update > float(1 / self.subscriptions[topic].rate):
-                message = self._listen_for_topic(topic)
-                if message and message != self.subscriptions[topic].last_message:
+            if self.subscriptions[topic].subscribe_rate is None:
+                # This is a one-time subscription, so skip
+                continue
+
+            if get_timestamp() - self.subscriptions[topic].last_timestamp > float(
+                1 / self.subscriptions[topic].subscribe_rate
+            ):
+                # Listen for any update
+                message = self._listen_once(topic)
+                self.subscriptions[topic].last_timestamp = get_timestamp()
+
+                if message is not None and message != self.subscriptions[topic].last_message:
                     # Update the subscription properties on reception of a message
                     self.subscriptions[topic].last_message = message
-                    self.subscriptions[topic].last_update = message.get("__t", 0)
+                    self.subscriptions[topic].last_timestamp = self.subscriptions[topic]._timestamp
 
-                    # Format the message
-                    message = {
-                        key: value for key, value in message.items() if not key.startswith("__")
-                    }  # Remove internal data structures
-
-                    # Call the callback
+                    # Call the registered callbacks
                     self.subscriptions[topic].call(message)
-
-    def _listen_for_topic(self, topic: str) -> Dict[str, Any]:
-        """Listen to a topic."""
-        # while True:
-        db = self._memory.get(topic, default={})
-
-        # return the db *with* the internal data structures
-        return db
-
-    def _listen_once(self, topic: str) -> Dict[str, Any]:
-        """Listen to a topic once."""
-        # while True:
-        db = self._memory.get(topic, default={})
-
-        # return the db without the internal data structures
-        return {key: value for key, value in db.items() if not key.startswith("__")}
-
-    def listen_once(self, topic: str) -> Dict[str, Any]:
-        """Listen to a topic once."""
-        return self._listen_once(topic)
 
     # endregion
 
