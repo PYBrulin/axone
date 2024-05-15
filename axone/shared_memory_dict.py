@@ -60,12 +60,12 @@ class SharedMemoryDict:
         self._lock = Lock(
             os.path.join(
                 os.path.expanduser("~"),
-                f"{name}.axone.lock",
+                f".{name}.axone.lock",
             )
         )
 
         # Create shared memory block
-        self._memory_block = self._get_or_create_memory_block(f"sm_{name}", size)
+        self._memory_block = self._get_or_create_memory_block(f"axn_{name}", size)
         self._ensure_memory_initialization()
         self._size = 0
 

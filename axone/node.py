@@ -1,11 +1,13 @@
 import json
 import logging
 import os
-import random
-import string
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Union
+
+from axone.publisher import Publisher
+from axone.subscriber import Subscription
+from axone.utils import generate_uuid
 
 from .shared_memory_dict import SharedMemoryDict
 
@@ -55,14 +57,14 @@ class Node:
 
         # Node parameters
         self._name = name
-        self._memory_endpoint = kwargs.get("memory_endpoint", "")
-        self._memory_size = kwargs.get("memory_size", None)
-        self._memory_serializer = kwargs.get("memory_serializer", None)
+        self._centralized_memory_endpoint = kwargs.get("centralized_memory_endpoint", "")
+        self._centralized_memory_size = kwargs.get("centralized_memory_size", None)
+        self._centralized_memory_serializer = kwargs.get("centralized_memory_serializer", None)
 
         # Check for required parameters
         if self.name == "":
             raise ValueError("Node name cannot be empty.")
-        if self.memory_endpoint == "":
+        if self.centralized_memory_endpoint == "":
             raise ValueError("Memory endpoint cannot be empty.")
 
         # Parameters parameters
@@ -82,7 +84,7 @@ class Node:
         self.kwargs = kwargs
 
         # Generate a unique node id
-        self._node_id = self.get_node_id()
+        self._node_id = generate_uuid(self._name)
 
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Node.Publisher] = {}
@@ -95,12 +97,15 @@ class Node:
         # Setting it to 0 will force the memory to be cleaned up instantly on
         # the first iteration of the loop
 
+    def __del__(self) -> None:
+        print("Node instance is about to be destroyed")
+
     def start(self) -> None:
         # Initialize the shared memory
         self._memory = SharedMemoryDict(
-            name=self.memory_endpoint,
-            size=self.memory_size,
-            serializer=self._memory_serializer,
+            name=self.centralized_memory_endpoint,
+            size=self.centralized_memory_size,
+            serializer=self._centralized_memory_serializer,
         )
 
         # Register node on the memory
@@ -111,6 +116,7 @@ class Node:
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._executor.submit(self._server)
 
+    # region properties
     @property
     def node_id(self) -> str:
         """Return the node id."""
@@ -128,26 +134,26 @@ class Node:
         self.kwargs["name"] = name
 
     @property
-    def memory_endpoint(self) -> str:
+    def centralized_memory_endpoint(self) -> str:
         """Return the memory endpoint."""
-        return self._memory_endpoint
+        return self._centralized_memory_endpoint
 
-    @memory_endpoint.setter
-    def memory_endpoint(self, memory_endpoint: str) -> None:
+    @centralized_memory_endpoint.setter
+    def centralized_memory_endpoint(self, centralized_memory_endpoint: str) -> None:
         """Set the memory endpoint."""
-        self._memory_endpoint = memory_endpoint
-        self.kwargs["memory_endpoint"] = memory_endpoint
+        self._centralized_memory_endpoint = centralized_memory_endpoint
+        self.kwargs["centralized_memory_endpoint"] = centralized_memory_endpoint
 
     @property
-    def memory_size(self) -> int:
+    def centralized_memory_size(self) -> int:
         """Return the memory size."""
-        return self._memory_size
+        return self._centralized_memory_size
 
-    @memory_size.setter
-    def memory_size(self, memory_size: Optional[int]) -> None:
+    @centralized_memory_size.setter
+    def centralized_memory_size(self, centralized_memory_size: Optional[int]) -> None:
         """Set the memory size."""
-        self._memory_size = memory_size
-        self.kwargs["memory_size"] = memory_size
+        self._centralized_memory_size = centralized_memory_size
+        self.kwargs["centralized_memory_size"] = centralized_memory_size
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -160,44 +166,9 @@ class Node:
         self._parameters = parameters
         self.kwargs["parameters"] = parameters
 
-    class Publisher:
-        def __init__(self) -> None:
-            self._topic: str = ""
-            self._rate: float = -1
-            self._last_update: float = 0
-            self._content: Any = None
+    # endregion properties
 
-        @property
-        def topic(self) -> str:
-            return self._topic
-
-        @topic.setter
-        def topic(self, topic: str) -> None:
-            self._topic = topic
-
-        @property
-        def rate(self) -> float:
-            return self._rate
-
-        @rate.setter
-        def rate(self, rate: float) -> None:
-            self._rate = rate
-
-        @property
-        def last_update(self) -> float:
-            return self._last_update
-
-        @last_update.setter
-        def last_update(self, last_update: float) -> None:
-            self._last_update = last_update
-
-        @property
-        def content(self) -> Any:
-            return self._content
-
-        @content.setter
-        def content(self, content: Any) -> None:
-            self._content = content
+    # region Publisher
 
     @property
     def publishers(self) -> Dict[str, Publisher]:
@@ -210,58 +181,9 @@ class Node:
         self._publishers = publishers
         self.kwargs["publishers"] = publishers
 
-    class Subscription:
-        def __init__(self) -> None:
-            self._topic: str = ""
-            self._rate: float = -1
-            self._last_message = None
-            self._last_update: float = 0
-            self._callbacks = []
+    # endregion Publisher
 
-        @property
-        def topic(self) -> str:
-            return self._topic
-
-        @topic.setter
-        def topic(self, topic: str) -> None:
-            self._topic = topic
-
-        @property
-        def rate(self) -> float:
-            return self._rate
-
-        @rate.setter
-        def rate(self, rate: float) -> None:
-            self._rate = rate
-
-        @property
-        def last_message(self) -> Any | None:
-            return self._last_message
-
-        @last_message.setter
-        def last_message(self, message) -> None:
-            if message is not None and message != self._last_message:
-                self._last_message = message
-                message = {
-                    key: value for key, value in message.items() if not key.startswith("__")
-                }  # Remove internal data structures
-
-        @property
-        def last_update(self) -> float:
-            return self._last_update
-
-        @last_update.setter
-        def last_update(self, last_update: float) -> None:
-            self._last_update = last_update
-
-        @property
-        def callbacks(self) -> List[Callable]:
-            return self._callbacks
-
-        def call(self, message) -> None:
-            for callback in self._callbacks:
-                callback(message)
-
+    # region Subscriber
     @property
     def subscriptions(self) -> Dict[str, Subscription]:
         """Return the node subscriptions dictionnary containing the topics as keys and the callbacks as values."""
@@ -273,6 +195,9 @@ class Node:
         self._subscriptions = subscriptions
         self.kwargs["subscriptions"] = subscriptions
 
+    # endregion Subscriber
+
+    # region Services
     @property
     def services(self) -> Optional[Dict[str, Any]]:
         """Return the node services."""
@@ -294,13 +219,11 @@ class Node:
         """Return the service server rate."""
         return self._hide_services
 
+    # endregion Services
+
     @property
     def _timestamp(self) -> int | float:
         return self.get_timestamp()
-
-    def get_node_id(self) -> str:
-        """Generate a unique node id."""
-        return "".join(random.choices(string.ascii_letters + string.digits, k=10))
 
     def get_timestamp(self) -> int | float:
         """Output a formatted timestamp."""
@@ -360,6 +283,9 @@ class Node:
 
         # Close connection to the shared memory for this node only
         self._memory.shm.close()
+
+    def stop(self) -> None:
+        self.shutdown()
 
     # region Federated server functions
 
@@ -502,10 +428,8 @@ class Node:
         """Register a publisher for a topic."""
         logging.debug(f"Registering publisher {topic} for node {self.node_id}:{self.name}.")
         # Create a new publisher
-        self.publishers[topic] = Node.Publisher()
-        self.publishers[topic].topic = topic
+        self.publishers[topic] = Node.Publisher(topic, rate)
         self.publishers[topic].content = message
-        self.publishers[topic].rate = rate
         self.publishers[topic].last_update = 0
 
     def _publish_once(

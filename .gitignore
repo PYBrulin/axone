@@ -1,6 +1,7 @@
 # Project
 axone/_version.py
 *.json
+*.bin
 !examples/axone.json
 
 # Byte-compiled / optimized / DLL files
