@@ -1,6 +1,6 @@
 [flake8]
 count=True
-ignore=E704,C901,W503
+ignore=C901,E203,E704,W503
 max-complexity=10
 max-line-length=127
 exclude =

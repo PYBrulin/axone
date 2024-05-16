@@ -13,3 +13,6 @@ if __name__ == "__main__":
     print(generate_uuid("Hello"))
     print(generate_uuid("Hello"))
     print(generate_uuid("Hello1"))
+
+    print(generate_uuid("test_node_to_central"))
+    print(generate_uuid("test_node2_to_central"))

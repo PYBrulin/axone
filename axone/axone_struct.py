@@ -1,5 +1,8 @@
+import inspect
+import logging
+import time
 from enum import Enum
-from typing import Any
+from typing import Any, ItemsView, Iterator, Optional
 
 
 class TypeSize(Enum):
@@ -10,6 +13,30 @@ class TypeSize(Enum):
     AXONESTRUCT = 4
 
 
+BYTES_PER_INT = 4  # TODO: Change to numpy dtypes
+
+
+def call_value(value):
+    if callable(value):
+        if inspect.isbuiltin(value):
+            # Handle built-in functions here
+            result = value()
+        else:
+            try:
+                sig = inspect.signature(value)
+                if len(sig.parameters) == 0:
+                    result = value()
+                else:
+                    # logging.error(f"Callable {value} has parameters {sig.parameters}")
+                    result = None
+            except ValueError:
+                logging.error(f"Cannot get signature of function {value}")
+                result = None
+    else:
+        result = value
+    return result
+
+
 class AxoneStruct:
     def __init__(self) -> None:
         pass
@@ -18,46 +45,99 @@ class AxoneStruct:
         print(self.__class__.__name__)
         print("> Instance attributes:")
         for key, value in self.__dict__.items():
-            print(" |", key, type(value), value)
+            if not key.startswith("_"):
+                print(" |", key, type(value), value if not callable(value) else call_value(value))
         print("> Class attributes:")
         for key, value in self.__class__.__dict__.items():
-            if not key.startswith("__"):
-                print(" |", key, type(value), value)
+            if not key.startswith("_"):
+                print(" |", key, type(value), value if not callable(value) else call_value(value))
         print("> Method Resolution Order:")
         for cls in self.__class__.mro()[1:]:
-            subattrs = [key for key in cls.__dict__.keys() if not key.startswith("__") and not callable(getattr(cls, key))]
+            subattrs = [key for key in cls.__dict__.keys() if not key.startswith("_")]
             if subattrs:
                 print(" |", cls.__name__, subattrs)
 
     def __str__(self) -> str:
         out = self.__class__.__name__
-        for key, value in self.__class__.__dict__.items():
-            if not key.startswith("__") and not callable(getattr(self.__class__, key)):
-                out += f"\n │ {key} {type(value)} {value}"
+        for key, value in self.__attributes__.items():
+            if not key.startswith("_"):
+                out += f"\n │ {key} {type(value)} {value if not callable(value) else call_value(value)}"
         return out
 
     @property
     def __attributes__(self) -> str:
-        return {
-            key: value
+        attrs = {
+            key: value if not callable(value) else call_value(value)
             for key, value in self.__class__.__dict__.items()
-            if not key.startswith("__") and not callable(getattr(self.__class__, key))
+            if not key.startswith("_")
         }
 
+        # Remove all value that have None
+        return {key: value for key, value in attrs.items() if value is not None}
+
+    def __len__(self) -> int:
+        return len(self.__attributes__)
+
+    def __delitem__(self, key: str) -> None:
+        if key in self.__class__.__dict__:
+            delattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.__attributes__)
+
+    def __reversed__(self) -> Iterator[str]:
+        return reversed(self.__attributes__)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.__attributes__
+
+    def __eq__(self, other: Any) -> bool:
+        """Check if the object is equal to another object based on its attributes"""
+        return self.__attributes__ == other
+
+    def __ne__(self, other: Any) -> bool:
+        """Check if the object is not equal to another object based on its attributes"""
+        return self.__attributes__ != other
+
     def __getitem__(self, key: str) -> Any:
-        return getattr(self.__class__, key)
+        return getattr(self, key)
+
+    def get(self, key: str, default: Optional[Any] = None) -> Any:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            return default
+
+    def keys(self) -> Iterator[str]:
+        return self.__attributes__.keys()
+
+    def values(self) -> Iterator[Any]:
+        return self.__attributes__.values()
+
+    def items(self) -> ItemsView:
+        return self.__attributes__.items()
+
+    def pop(self, key: str, default: Optional[Any] = None) -> Any:
+        try:
+            value = getattr(self, key)
+            delattr(self, key)
+            return value
+        except AttributeError:
+            return default
+
+    def update(self, other: Any) -> None:
+        for key, value in other.items():
+            setattr(self, key, value)
 
     def __setitem__(self, key: str, value: Any) -> None:
         if key in self.__class__.__dict__:
-            setattr(self.__class__, key, value)
+            setattr(self, key, value)
         else:
             raise AttributeError(
                 f"Attribute '{key}' not found in class '{self.__class__.__name__}'. You should not add new attributes to the "
                 + "class at runtime otherwise the size of the message might overflow the shared memory block that has been "
                 + "allocated for it."
             )
-
-    __BYTES_PER_INT__ = 4
 
     def get_approximate_size(self) -> int:
         """Get the approximate size of the encoded message.
@@ -67,14 +147,9 @@ class AxoneStruct:
         """
 
         # Number of attributes
-        attrs = [
-            key
-            for key in self.__class__.__dict__.keys()
-            if not key.startswith("__") and not callable(getattr(self.__class__, key))
-        ]
         approx_size = 2
 
-        for key in attrs:
+        for key in self.__attributes__:
             value = getattr(self, key)
 
             # Attribute name
@@ -86,9 +161,9 @@ class AxoneStruct:
             if isinstance(value, bool):
                 approx_size += 2
             elif isinstance(value, int):
-                approx_size += 1 + self.__BYTES_PER_INT__
+                approx_size += 1 + BYTES_PER_INT
             elif isinstance(value, float):
-                approx_size += 1 + 2 * self.__BYTES_PER_INT__
+                approx_size += 1 + 2 * BYTES_PER_INT
             elif isinstance(value, str):
                 approx_size += 1 + 127  # Allow for a string of 127 characters max
             elif isinstance(value, AxoneStruct):
@@ -124,19 +199,20 @@ class AxoneStruct:
         """
 
         # Number of attributes
-        attrs = [
-            key
-            for key in self.__class__.__dict__.keys()
-            if not key.startswith("__") and not callable(getattr(self.__class__, key))
-        ]
+        logging.debug(f"Encoding {len(self)} attributes")
 
-        num_attrs = len(attrs)
+        num_attrs = len(self)
         output = num_attrs.to_bytes(1, byteorder="big")
 
-        output += self.__BYTES_PER_INT__.to_bytes(1, byteorder="big")
+        output += BYTES_PER_INT.to_bytes(1, byteorder="big")
 
-        for key in attrs:
+        self.list_all_attrs()
+        print(self.__attributes__)
+
+        for key in self.__attributes__:
             value = getattr(self, key)
+
+            value = call_value(value)
 
             # Attribute name
             key_bytes = key.encode("utf-8")
@@ -153,7 +229,7 @@ class AxoneStruct:
 
             elif isinstance(value, int):
                 output += TypeSize.INT.value.to_bytes(1, byteorder="big")
-                output += value.to_bytes(self.__BYTES_PER_INT__, byteorder="big")
+                output += value.to_bytes(BYTES_PER_INT, byteorder="big")
 
             elif isinstance(value, float):
                 output += TypeSize.LONG.value.to_bytes(1, byteorder="big")
@@ -162,26 +238,27 @@ class AxoneStruct:
                 # Split float into integer using string
                 int_part = int(string_value.split(".")[0])
                 dec_part = int(string_value.split(".")[1])
-                output += int_part.to_bytes(self.__BYTES_PER_INT__, byteorder="big")
-                output += dec_part.to_bytes(self.__BYTES_PER_INT__, byteorder="big")
+                output += int_part.to_bytes(BYTES_PER_INT, byteorder="big")
+                output += dec_part.to_bytes(BYTES_PER_INT, byteorder="big")
 
             elif isinstance(value, str):
                 output += TypeSize.STRING.value.to_bytes(1, byteorder="big")
                 value_bytes = value.encode("utf-8")
                 value_len = len(value_bytes)
+                print(value_len, value_bytes, BYTES_PER_INT)
                 if value_len > 127:
                     raise ValueError(f"Attribute value too long for key-value pair\n\t{key}:`{value}`")
-                output += value_len.to_bytes(self.__BYTES_PER_INT__, byteorder="big")
+                output += value_len.to_bytes(BYTES_PER_INT, byteorder="big")
                 output += value_bytes
 
             elif isinstance(value, AxoneStruct):
                 output += TypeSize.AXONESTRUCT.value.to_bytes(1, byteorder="big")
                 encoded_struct = value.encode()
-                output += len(encoded_struct).to_bytes(self.__BYTES_PER_INT__, byteorder="big")
+                output += len(encoded_struct).to_bytes(BYTES_PER_INT, byteorder="big")
                 output += encoded_struct
 
             else:
-                raise ValueError(f"Unknown attribute type {type(value)}")
+                raise ValueError(f"Unknown attribute type {type(value)} for key-value pair\n\t{key}:`{value}`")
 
         return output
 
@@ -194,7 +271,7 @@ class AxoneStruct:
         num_attrs = int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big")
 
         # __BYTES_PER_INT__
-        self.__BYTES_PER_INT__ = int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big")
+        BYTES_PER_INT = int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big")
 
         for _ in range(num_attrs):
             # Attribute name
@@ -208,25 +285,26 @@ class AxoneStruct:
                 value = bool(int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big"))
 
             elif attr_type == TypeSize.INT:
-                value = int.from_bytes(bytes(next(data_iter) for _ in range(self.__BYTES_PER_INT__)), byteorder="big")
+                value = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big")
 
             elif attr_type == TypeSize.LONG:
-                int_part = int.from_bytes(bytes(next(data_iter) for _ in range(self.__BYTES_PER_INT__)), byteorder="big")
-                dec_part = int.from_bytes(bytes(next(data_iter) for _ in range(self.__BYTES_PER_INT__)), byteorder="big")
+                int_part = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big")
+                dec_part = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big")
                 value = float(f"{int_part}.{dec_part}")
 
             elif attr_type == TypeSize.STRING:
-                value_len = int.from_bytes(bytes(next(data_iter) for _ in range(self.__BYTES_PER_INT__)), byteorder="big")
+                value_len = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big")
                 value = bytes(next(data_iter) for _ in range(value_len)).decode("utf-8")
 
             elif attr_type == TypeSize.AXONESTRUCT:
                 value = AxoneStruct()
-                value_len = int.from_bytes(bytes(next(data_iter) for _ in range(self.__BYTES_PER_INT__)), byteorder="big")
+                value_len = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big")
                 value.decode(bytes(next(data_iter) for _ in range(value_len)))
 
             else:
                 raise ValueError(f"Unknown attribute type {attr_type}")
 
+            logging.debug(f"Setting attribute {key} to {value}")
             setattr(self, key, value)
 
 
@@ -243,6 +321,9 @@ class AxoneService(AxoneStruct):
 
 
 if __name__ == "__main__":
+    from axone.custom_logger import setup_logger
+
+    setup_logger(debug=True)
 
     class SubMessage(AxoneStruct):
         x: int = 0
@@ -258,6 +339,7 @@ if __name__ == "__main__":
         f: float = 1e9
         g: float = 0.00001357
         h: str = "hello"
+        time: float = time.time  # a callable that will be called when the attribute is accessed
 
         xyz: SubMessage = SubMessage()
 
@@ -276,15 +358,14 @@ if __name__ == "__main__":
         response: ATopicPassedToAxone = SubMessage()
 
     # Topic
-    s = ATopicPassedToAxone()
+    topic = ATopicPassedToAxone()
 
     print("s.list_all_attrs()")
-    s.list_all_attrs()
-    print(s)
+    topic.list_all_attrs()
 
     with open("topic.bin", "wb") as f:
-        print("s.encode()")
-        out = s.encode()
+        print("topic.encode()")
+        out = topic.encode()
         print(out)
         print(len(out))
         f.write(out)
@@ -293,33 +374,36 @@ if __name__ == "__main__":
     print(" ".join(f"{c:02x}" for c in out))
 
     with open("topic.bin", "rb") as f:
-        print("s.decode()")
+        print("topic.decode()")
         out = f.read()
-        s2 = AxoneStruct()  # The base message class
-        s2.decode(out)  # A subclass of the base message class that inherits the attribute of ATopicPassedToAxone
-        print(s2.xyz.x)
-        print(s2.h)
+        topic2 = AxoneStruct()  # The base message class
+        topic2.decode(out)  # A subclass of the base message class that inherits the attribute of ATopicPassedToAxone
+        topic2.list_all_attrs()
+        print("x", topic2.xyz.x)
+        print("h", topic2.h)
 
     # Service
+    # print("\nServices")
 
-    s = AServicePassedToAxone()
+    # service = AServicePassedToAxone()
 
-    with open("service.bin", "wb") as f:
-        print("s.encode()")
-        out = s.encode()
-        f.write(out)
+    # with open("service.bin", "wb") as f:
+    #     print("service.encode()")
+    #     out = service.encode()
+    #     f.write(out)
 
-    # print out in hexadecimal string
-    print(" ".join(f"{c:02x}" for c in out))
+    # # print out in hexadecimal string
+    # print(" ".join(f"{c:02x}" for c in out))
 
-    with open("service.bin", "rb") as f:
-        print("s.decode()")
-        out = f.read()
-        s2 = AxoneStruct()  # The base message class
-        s2.decode(out)  # A subclass of the base message class that inherits the attribute of ATopicPassedToAxone
+    # with open("service.bin", "rb") as f:
+    #     print("service.decode()")
+    #     out = f.read()
+    #     print(out)
+    #     service2 = AxoneStruct()  # The base message class
+    #     service2.decode(out)  # A subclass of the base message class that inherits the attribute of ATopicPassedToAxone
 
-        print("Request", str(s2.request))
-        print("Response", str(s2.response))
+    #     print("Request", str(service2.request))
+    #     print("Response", str(service2.response))
 
     # print(s.get_approximate_size(), len(s.encode()))
 

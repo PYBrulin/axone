@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 
-from custom_logger import setup_logger
+from axone.custom_logger import setup_logger
 
 setup_logger(debug=False)
 

@@ -3,8 +3,7 @@ import logging  # noqa
 import time
 from typing import NoReturn
 
-from custom_logger import setup_logger
-
+from axone.custom_logger import setup_logger
 from axone.node import Node
 from axone.node_process import NodeProcess
 

@@ -10,6 +10,7 @@ class CustomFormatter(logging.Formatter):
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
     fmt = "[%(levelname)1.1s] %(asctime)s %(filename)s:%(lineno)d - %(message)s"
+    datefmt = '%H:%M:%S'
 
     FORMATS = {
         logging.DEBUG: magenta + fmt + reset,
@@ -21,7 +22,7 @@ class CustomFormatter(logging.Formatter):
 
     def format(self, record) -> str:
         log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt)
+        formatter = logging.Formatter(log_fmt, datefmt=self.datefmt)
         return formatter.format(record)
 
 

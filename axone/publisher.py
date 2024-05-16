@@ -1,25 +1,24 @@
+import time
 from multiprocessing.shared_memory import SharedMemory
-from typing import Any
 
-from axone.axone_struct import AxoneMessage
+from axone.axone_struct import AxoneStruct
 from axone.utils import generate_uuid
 
 
 class Publisher:
     def __init__(
         self,
-        topic: AxoneMessage,
+        topic: AxoneStruct,
         rate: float,
     ) -> None:
-        # Ensure that the topic is an instance of AxoneMessage or that it has inherited from it
-        if not isinstance(topic, AxoneMessage):
-            raise ValueError("The topic should be an instance of AxoneMessage")
+        # Ensure that the topic is an instance of AxoneStruct or that it has inherited from it
+        if not isinstance(topic, AxoneStruct):
+            raise ValueError("The topic should be an instance of AxoneStruct")
 
-        self._topic: AxoneMessage = topic
+        self._topic: AxoneStruct = topic
         self._name: str = self._topic.__class__.__name__
         self._rate: float = float(rate)
         self._last_update: float = 0
-        self._content: Any = None
 
         self._uuid = generate_uuid(self._name)
 
@@ -50,23 +49,16 @@ class Publisher:
         """The timestamp of the last update of the topic"""
         return self._last_update
 
-    @last_update.setter
-    def last_update(self, last_update: float) -> None:
-        self._last_update = last_update
-
-    @property
-    def content(self) -> Any:
-        return self._topic.__attributes__
-
-    @content.setter
-    def content(self, content: Any) -> None:
-        for key, value in content.items():
-            self._topic[key] = value
+    def publish(self) -> None:
+        """Update the topic"""
+        self._last_update = time.time()
+        encoded = self._topic.encode()
+        self._memory.buf[: len(encoded)] = bytes(encoded)
 
 
 if __name__ == "__main__":
 
-    class ACustomMessage(AxoneMessage):
+    class ACustomMessage(AxoneStruct):
         a: int = 987654321
         b: str = "Hello"
         c: float = 12.345
