@@ -3,12 +3,13 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional, Union
+from typing import Callable, Dict
 
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import setup_logger
 from axone.publisher import Publisher
 from axone.shared_memory import AxoneSharedMemory
+from axone.subscriber import Subscription
 from axone.utils import generate_uuid
 
 # from axone.subscription import Subscription
@@ -127,7 +128,7 @@ class AxoneNode:
 
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
-        # self._subscriptions: Dict[str, Subscription] = {}
+        self._subscriptions: Dict[str, Subscription] = {}
         # self._services_map: Dict[str, Callable] = {}
 
         self._last_federation_time = 0  # The time at which the memory was last federated.
@@ -135,7 +136,8 @@ class AxoneNode:
     # region Common functions
     @property
     def _timestamp(self) -> int | float:
-        return self.get_timestamp()
+        return time.time()
+        # return self.get_timestamp()
 
     def get_timestamp(self) -> int | float:
         """Output a formatted timestamp."""
@@ -147,7 +149,7 @@ class AxoneNode:
         return round(
             time.time(),  # TODO: % self._timestamp_range,
             (
-                self._timestamp_precision if self._timestamp_precision > 0 else None
+                TIMESTAMP_PRECISION if TIMESTAMP_PRECISION > 0 else None
             ),  # Note: If ndigits is None round() converts to int directly
         )
 
@@ -169,30 +171,32 @@ class AxoneNode:
     def publish_rate(
         self,
         topic: AxoneStruct,
-        rate: float = 1.0,
+        rate: float = -1.0,
     ) -> None:
         """Register a publisher for a topic."""
         # Create a new publisher
-        self.publishers[topic.__class__.__name__] = Publisher(topic, rate)
-        logging.debug(f"Registered publisher {self.publishers[-1].name} at rate {rate}.")
+        topic_name = topic.__class__.__name__
+        self.publishers[topic_name] = Publisher(topic, rate)
+        logging.debug(f"Registered publisher {topic_name} at rate {rate}.")
 
     def _publish_once(
         self,
         topic: AxoneStruct,
-        rate: Optional[Union[int, float]] = None,
+        rate: float = -1.0,
     ) -> None:
         """Publish a message once on a topic."""
+        topic_name = topic.__class__.__name__
         # Check if the topic is registered
-        if topic.__class__.__name__ not in self.publishers:
-            raise ValueError(f"Topic {topic} is not registered.")
+        if topic_name not in self.publishers:
+            self.publishers[topic_name] = Publisher(topic, rate)
 
         # Publish the message
-        self.publishers[topic].publish()
+        self.publishers[topic_name].publish()
 
     def publish_once(
         self,
         topic: AxoneStruct,
-        rate: Optional[Union[int, float]] = None,
+        rate: float = -1.0,
     ) -> None:
         """Publish a message on a topic."""
         self._publish_once(
@@ -202,16 +206,75 @@ class AxoneNode:
 
     def _publish_loop(self) -> None:
         """Function called periodically to publish messages."""
-        for topic in self.publishers:
+        for topic in list(self.publishers.keys()):
+            if self.publishers[topic].rate < 0.0:
+                continue
             # Check if it is time to publish
             if self._timestamp > float(1 / self.publishers[topic].rate) + self.publishers[topic].last_update:
                 # Publish the message
                 self._publish_once(
-                    topic,
+                    self.publishers[topic].topic,
                     self.publishers[topic].rate,
                 )
 
-    # endregion
+    # endregion Publisher functions
+
+    # region Subscriber functions
+    @property
+    def subscriptions(self) -> Dict[str, Subscription]:
+        """Return the node subscriptions dictionnary containing the topics as keys and the callbacks as values."""
+        return self._subscriptions
+
+    @subscriptions.setter
+    def subscriptions(self, subscriptions: Dict[str, Subscription]) -> None:
+        """Set the node subscriptions."""
+        self._subscriptions = subscriptions
+        # self.kwargs["subscriptions"] = subscriptions
+
+    def subscribe(self, topic_name: str, callback: Callable) -> None:
+        """Subscribe to a topic."""
+        # Add the callback to the list of callbacks for this topic
+        if topic_name not in self.subscriptions:
+            # Create a new subscription
+            self.subscriptions[topic_name] = Subscription(topic_name)
+            self.subscriptions[topic_name].callbacks.append(callback)
+            logging.debug(f"Registering subscription {topic_name} for node {self.node_id}:{self.name}.")
+        else:
+            # Add the callback to the existing subscription
+            self.subscriptions[topic_name].callbacks.append(callback)
+            logging.debug(f"Adding callback to subscription {topic_name} for node {self.node_id}:{self.name}.")
+
+    def _listen_subscriptions(self) -> None:
+        """Function called periodically to listen to topics."""
+        for topic_name in self.subscriptions:
+            if self.subscriptions[topic_name].rate <= 0.0:
+                continue
+            if (
+                time.time() - self.subscriptions[topic_name].last_update > float(1 / self.subscriptions[topic_name].rate)
+            ) and (time.time() - self.subscriptions[topic_name].last_fetch > float(1 / self.subscriptions[topic_name].rate)):
+
+                topic_struct = self._listen_for_topic(topic_name)
+                if topic_struct is not None:
+                    self.subscriptions[topic_name].call(topic_struct)
+
+    def _listen_for_topic(self, topic_name: str) -> AxoneStruct:
+        """Listen to a topic."""
+        if topic_name not in self.subscriptions:
+            return None
+        self.subscriptions[topic_name].subscribe()
+        return self.subscriptions[topic_name]._topic
+
+    def _listen_once(self, topic: str) -> AxoneStruct:
+        """Listen to a topic once."""
+        sub = Subscription(topic)
+        sub.subscribe()
+        return sub._topic
+
+    def listen_once(self, topic: str) -> AxoneStruct:
+        """Listen to a topic once."""
+        return self._listen_once(topic)
+
+    # endregion Subscriber functions
 
     def start(self) -> None:
         # Initialize a Thread to listen to the memory events
@@ -248,12 +311,12 @@ class AxoneNode:
             # self.self_node.update_timestamp()
 
         # if self.services is not None:
-        #     if time.perf_counter() - self._last_services_time > self.service_server_rate:
-        #         self._last_services_time = time.perf_counter()
+        #     if time.time() - self._last_services_time > self.service_server_rate:
+        #         self._last_services_time = time.time()
         #         self._listen_service()
 
-        # if self.subscriptions:
-        #     self._listen_subscriptions()
+        if self.subscriptions:
+            self._listen_subscriptions()
 
         if self.publishers:
             self._publish_loop()
@@ -264,8 +327,19 @@ if __name__ == "__main__":
     node = AxoneNode("test_node_to_central", centralized_memory_endpoint="test")
     node.start()
 
+    class SubMessage(AxoneStruct):
+        x: int = 0
+        y: float = 1.2
+        z: str = "34"
+
+    example_topic = SubMessage()
+
     try:
         while True:
+            example_topic.x += 1
+            node.publish_once(
+                example_topic,
+            )
             time.sleep(1)
     except KeyboardInterrupt:
         pass

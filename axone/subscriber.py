@@ -1,5 +1,8 @@
+import time
+from multiprocessing.shared_memory import SharedMemory
 from typing import Any, Callable, List
 
+from axone.axone_struct import AxoneStruct
 from axone.utils import generate_uuid
 
 
@@ -7,62 +10,74 @@ class Subscription:
     def __init__(
         self,
         topic_name: str = "",
-        rate: float = -1,
+        rate: float = 1.0,
     ) -> None:
-        self._topic: str = topic_name
+        self._name: str = topic_name
         self._rate: float = rate
-        self._last_message = None
         self._last_update: float = 0
+        self._last_fetch: float = 0
+
+        self._topic = AxoneStruct()
+
         self._callbacks = []
 
-        self._topic_uuid = generate_uuid(self._topic)
+        self._uuid = generate_uuid(topic_name)
+
+        # Connect to the shared memory of the topic
+        self._memory = SharedMemory(
+            name=self._uuid,
+            create=False,
+        )
+
+        # TODO : Implement unlink, close, etc for the SHM
 
     @property
     def topic(self) -> str:
-        """The topic name of the subscription"""
-        return self._topic
+        """The string representation of the topic"""
+        return str(self._topic)
 
-    @topic.setter
-    def topic(self, topic: str) -> None:
-        self._topic = topic
-        self._topic_uuid = generate_uuid(self._topic)
+    @property
+    def name(self) -> str:
+        """The topic name of the publisher"""
+        return self._name
 
     @property
     def rate(self) -> float:
         """The rate at which the topic is subscribed"""
         return self._rate
 
-    @rate.setter
-    def rate(self, rate: float) -> None:
-        self._rate = rate
-
-    @property
-    def last_message(self) -> Any | None:
-        """The content of the last update of the topic"""
-        return self._last_message
-
-    @last_message.setter
-    def last_message(self, message) -> None:
-        if message is not None and message != self._last_message:
-            self._last_message = message
-            message = {
-                key: value for key, value in message.items() if not key.startswith("__")
-            }  # Remove internal data structures
-
     @property
     def last_update(self) -> float:
         """The timestamp of the last update of the topic"""
         return self._last_update
 
-    @last_update.setter
-    def last_update(self, last_update: float) -> None:
-        self._last_update = last_update
+    @property
+    def last_fetch(self) -> float:
+        return self._last_fetch
 
     @property
     def callbacks(self) -> List[Callable]:
         """The list of callbacks to call when a new message is received"""
         return self._callbacks
 
-    def call(self, message) -> None:
+    def call(self, topic_struct) -> None:
         for callback in self._callbacks:
-            callback(message)
+            callback(topic_struct)
+
+    def subscribe(self) -> Any:
+        """Get the latest message from the topic"""
+        # Check that the memory is not empty
+        if self._memory.buf is None:
+            return None
+
+        # Get the message from the shared memory
+        encoded = self._memory.buf[:]
+
+        self._topic.decode(encoded)
+
+        self._last_fetch = time.time()
+
+        self._last_update = self._topic.timestamp_  # This comes from the topic itself
+        self._rate = self._topic.rate_  # This comes from the topic itself
+
+        # Note: Calling the callbacks is done in the main loop not here
