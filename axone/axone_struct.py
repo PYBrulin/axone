@@ -145,8 +145,9 @@ class AxoneStruct:
         # Start from the base classes
         base_instance = self.__class__
         if hasattr(base_instance, 'list_instance_attributes'):
-            attrs.update(base_instance.list_instance_attributes(base_instance))
-            return attrs
+            base_attrs = base_instance.list_instance_attributes(base_instance)
+            base_attrs.update(attrs)
+            return base_attrs
         else:
             return self.list_instance_attributes()
 

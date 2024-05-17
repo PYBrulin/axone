@@ -1,3 +1,4 @@
+import logging
 import time
 from multiprocessing.shared_memory import SharedMemory
 from typing import Any, Callable, List
@@ -24,10 +25,14 @@ class Subscription:
         self._uuid = generate_uuid(topic_name)
 
         # Connect to the shared memory of the topic
-        self._memory = SharedMemory(
-            name=self._uuid,
-            create=False,
-        )
+        try:
+            self._memory = SharedMemory(
+                name=self._uuid,
+                create=False,
+            )
+        except FileNotFoundError:
+            logging.error(f"Shared memory {self._uuid} not found")
+            self._memory = None
 
         # TODO : Implement unlink, close, etc for the SHM
 
@@ -66,16 +71,18 @@ class Subscription:
 
     def subscribe(self) -> Any:
         """Get the latest message from the topic"""
+        self._last_fetch = time.time()
+
         # Check that the memory is not empty
+        if self._memory is None:
+            return None
         if self._memory.buf is None:
             return None
 
         # Get the message from the shared memory
-        encoded = self._memory.buf[:]
+        encoded = bytes(self._memory.buf[:])
 
         self._topic.decode(encoded)
-
-        self._last_fetch = time.time()
 
         self._last_update = self._topic.timestamp_  # This comes from the topic itself
         self._rate = self._topic.rate_  # This comes from the topic itself

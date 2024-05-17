@@ -61,15 +61,18 @@ class Publisher:
         """The timestamp of the last update of the topic"""
         return self._last_update
 
-    def publish(self) -> None:
+    def publish(self, topic: AxoneStruct = None) -> None:
         """Update the topic"""
+        if topic is not None:
+            # This will update the topic for the next publish
+            self._topic: AxoneStruct = topic
+
         logging.debug(f"Publishing topic {self._name}")
         self._last_update = time.time()
         # Append specific fields to the topic
         self._topic.source_ = self._source
         self._topic.rate_ = self._rate
         self._topic.timestamp_ = time.time()
-        print(self._topic)
         encoded = self._topic.encode()
         self._memory.buf[: len(encoded)] = bytes(encoded)
 

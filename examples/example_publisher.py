@@ -51,15 +51,12 @@ class ExampleNodePublisher:
         #         memory_size=4096,
         #     )
 
-    def publish_actualization(self) -> None:
-        return {"message": f"Hello from topic_published_rate_func {time.time()}"}  # Return a dictionary
-
     def run(self) -> NoReturn:
         try:
             # Register a rated publisher
             self.node.publish_rate(ARatedTopic(), rate=3)
 
-            # Register a rated publisher from a callback function
+            # # Register a rated publisher from a callback function
             self.node.publish_rate(ARatedCallbackTopic(), rate=2)
 
             # Note start the node after registering the publishers

@@ -40,7 +40,6 @@ class ExampleNodeSubscriber:
         print(topic_struct.get("message"))
 
     def print_callback(self, topic_struct: AxoneStruct) -> None:
-        print(topic_struct)
         print(topic_struct.get("message_string"))
         print(topic_struct.get("message_callback"))
 
@@ -60,6 +59,7 @@ class ExampleNodeSubscriber:
                 # print("last_message", self.last_message)
                 # However, it is possible to get the last message from the shared memory using listen_once
                 print(self.node.listen_once("AStandaloneTopic"))
+
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass

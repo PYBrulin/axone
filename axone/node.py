@@ -50,8 +50,6 @@ class AxoneNode:
             """Advertise the node to the centralized memory."""
 
             # Check if the node is already registered
-            print(self.node_id)
-
             if self.memory[self.node_id] is not None:
                 logging.warning(f"Node {self.node_name} is already registered.")
 
@@ -176,7 +174,7 @@ class AxoneNode:
         """Register a publisher for a topic."""
         # Create a new publisher
         topic_name = topic.__class__.__name__
-        self.publishers[topic_name] = Publisher(topic, rate)
+        self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id)
         logging.debug(f"Registered publisher {topic_name} at rate {rate}.")
 
     def _publish_once(
@@ -188,10 +186,10 @@ class AxoneNode:
         topic_name = topic.__class__.__name__
         # Check if the topic is registered
         if topic_name not in self.publishers:
-            self.publishers[topic_name] = Publisher(topic, rate)
+            self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id)
 
         # Publish the message
-        self.publishers[topic_name].publish()
+        self.publishers[topic_name].publish(topic)
 
     def publish_once(
         self,
@@ -247,14 +245,16 @@ class AxoneNode:
     def _listen_subscriptions(self) -> None:
         """Function called periodically to listen to topics."""
         for topic_name in self.subscriptions:
+            # Do not listen to topics that need to be requested manually
             if self.subscriptions[topic_name].rate <= 0.0:
                 continue
-            if (
-                time.time() - self.subscriptions[topic_name].last_update > float(1 / self.subscriptions[topic_name].rate)
-            ) and (time.time() - self.subscriptions[topic_name].last_fetch > float(1 / self.subscriptions[topic_name].rate)):
 
+            # Check if it is time to listen
+            # TODO: Limit rate if the topic is not published
+            if time.time() - self.subscriptions[topic_name].last_update > float(1 / self.subscriptions[topic_name].rate):
                 topic_struct = self._listen_for_topic(topic_name)
                 if topic_struct is not None:
+                    logging.debug(f"Received topic {topic_name}.")
                     self.subscriptions[topic_name].call(topic_struct)
 
     def _listen_for_topic(self, topic_name: str) -> AxoneStruct:
