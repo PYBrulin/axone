@@ -34,7 +34,7 @@ class AxoneSharedMemory:
     def __init__(
         self,
         name: str,
-        struct: Optional[AxoneStruct] = AxoneStruct(),
+        struct: Optional[AxoneStruct] = None,
         size: Optional[int] = None,
         centralized: bool = False,
     ) -> None:
@@ -51,12 +51,18 @@ class AxoneSharedMemory:
         # )
 
         # Use the provided struct as itself
-        self._struct = struct
+        self._struct = struct if struct is not None else AxoneStruct()
 
         # Create shared memory block
         self._memory_block = self._get_or_create_memory_block(f"axn_{name}", size, centralized)
         self._ensure_memory_initialization()
         self._size = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup()
 
     @property
     def _shm(self) -> SharedMemory:
@@ -202,7 +208,7 @@ class AxoneSharedMemory:
         return repr(self.struct)
 
     def __contains__(self, key: str) -> bool:
-        return key in self.struct.__class__
+        return key in self.struct
 
     def _save_memory(self) -> None:
         data = self._struct.encode()

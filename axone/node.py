@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Dict
+from typing import Callable, Dict, Optional
 
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import setup_logger
@@ -36,12 +36,13 @@ class AxoneNode:
             self.node_id = node_id
 
             self.endpoint = kwargs.get("centralized_memory_endpoint", "")
+            assert self.endpoint != self.node_id, "Memory endpoint cannot be the same as the node id."
             self.size = kwargs.get("centralized_memory_size", 1024)
             if self.endpoint == "":
                 raise ValueError("Memory endpoint cannot be empty.")
 
             self.memory = AxoneSharedMemory(
-                name=self.endpoint,
+                name=generate_uuid(self.endpoint),
                 size=self.size,
                 centralized=True,
             )
@@ -89,7 +90,7 @@ class AxoneNode:
             """Advertise the node to the centralized memory."""
             self.memory['name'] = self.node_name
             self.memory['timestamp'] = time.time()
-            # self.memory['services'] = []
+            # self.memory['services'] = "something"
             # self.memory['parameters'] = {}
             # self.memory['topics'] = []
 
@@ -151,6 +152,47 @@ class AxoneNode:
             ),  # Note: If ndigits is None round() converts to int directly
         )
 
+    def list_nodes(self) -> list[str]:
+        """
+        List all the attributes in the centralized memory.
+        This is really simple as the centralized memory only contains the nodes ID and names.
+        """
+        return self.centralized_node.memory.struct.list_instance_attributes()
+
+    def find_node_by_name(self, name: str) -> Optional[str]:
+        """
+        Search a node by name.
+        """
+        return self.centralized_node.memory.struct.list_instance_attributes().get(generate_uuid(name), None)
+
+    def list_node_services(self, name: str):
+        """List the services available for a node."""
+        node = self.find_node_by_name(name)
+        if node is None:
+            logging.debug(f"Node {name} does not exist.")
+            return None
+
+        # Connect to the node memory
+        with AxoneSharedMemory(name=generate_uuid(node), centralized=False) as node_memory:
+            # Check if the node as the attribute services
+            if "services" not in node_memory:
+                logging.debug(f"Node {name} is NOT advertising services.")
+                return None
+
+            logging.debug(f"Node {name} has the attribute services.")
+            return node_memory["services"]
+
+    def is_node_advertising_services(self, name: str) -> bool:
+        """Check if a node is advertising services."""
+        return self.list_node_services(name) is not None
+
+    # def _is_service_advertised(self, node_id: str, service: str) -> bool:
+    #     """Check if an service is advertised by a node."""
+    #     return self._memory.get("__nds", {}).get(node_id, {}).get("__s", {}).get(service, {}) != {}
+
+    # def is_service_advertised(self, node_id: str, service: str) -> bool:
+    #     """Check if an service is advertised by a node."""
+    #     return self._is_service_advertised(node_id, service)
     # endregion Common functions
 
     # region Publisher functions

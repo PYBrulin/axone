@@ -1,19 +1,35 @@
 import inspect
 import logging
+import struct
 import time
 from enum import Enum
 from typing import Any, Iterator, Optional
 
 
+def timeit_if_debug(func):
+    def wrapper(*args, **kwargs):
+        if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+            start_time = time.perf_counter()
+            result = func(*args, **kwargs)
+            end_time = time.perf_counter()
+            logging.debug(f"{func.__name__} execution time: {end_time - start_time} seconds")
+            return result
+        else:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
 class TypeSize(Enum):
     BOOLEAN = 0
     INT = 1
-    LONG = 2
+    DOUBLE = 2
     STRING = 3
-    AXONESTRUCT = 4
+    LIST = 4
+    AXONESTRUCT = 10
 
 
-BYTES_PER_INT = 4  # TODO: Change to numpy dtypes
+BYTES_PER_INT = struct.calcsize('i')  # TODO: Change to numpy dtypes
 
 
 def call_value(value, instance=None):
@@ -239,13 +255,21 @@ class AxoneStruct:
 
             # Attribute type
             if isinstance(value, bool):
-                approx_size += 2
+                approx_size += 1 + 1  # struct.calcsize('b')
             elif isinstance(value, int):
-                approx_size += 1 + BYTES_PER_INT
+                approx_size += 1 + 4  # struct.calcsize('i')
             elif isinstance(value, float):
-                approx_size += 1 + 2 * BYTES_PER_INT
+                approx_size += 1 + 8  # struct.calcsize('d')
             elif isinstance(value, str):
                 approx_size += 1 + 127  # Allow for a string of 127 characters max
+            elif isinstance(value, list):
+                # lists are tricky, we need to encode the length of the list and then the length of each element
+                approx_size += 1 + 4  # 1 for the type, 4 for the length of the list
+                for v in value:
+                    if isinstance(v, AxoneStruct):
+                        approx_size += v.get_approximate_size()
+                    else:
+                        approx_size += 4 + len(str(v))  # 4 for the length of the string, len(str(v)) for the string itself
             elif isinstance(value, AxoneStruct):
                 approx_size += 1 + value.get_approximate_size()
             else:
@@ -253,6 +277,7 @@ class AxoneStruct:
 
         return approx_size
 
+    @timeit_if_debug
     def encode(self) -> bytes:
         """Encode all class attributes as bytes of minimum size
 
@@ -268,70 +293,55 @@ class AxoneStruct:
             - n bytes: attribute name
             if type is boolean:
             - 1 byte: 0 if False, 1 if True
-            if type is int or string:
+            if type is int, float or string:
             - __BYTES_PER_INT__ bytes: length of the attribute value
             - n bytes: attribute value
-            if type is float, encode both parts separately:
-            - __BYTES_PER_INT__ bytes: length of the attribute integer part
-            - n bytes: attribute integer part
-            - __BYTES_PER_INT__ bytes: length of the attribute decimal part
-            - n bytes: attribute decimal part
         """
 
         # Number of attributes
         logging.debug(f"Encoding {len(self)} attributes")
 
-        num_attrs = len(self)
-        output = num_attrs.to_bytes(1, byteorder="big")
+        output = struct.pack('>B', len(self.__attributes__))
 
-        output += BYTES_PER_INT.to_bytes(1, byteorder="big")
-
-        # for key in self.__attributes__:
-        #     value = getattr(self, key)
-
-        #     value = call_value(value, self)
         for key, value in self.__attributes__.items():
-
             # Attribute name
             key_bytes = key.encode("utf-8")
             key_len = len(key_bytes)
             if key_len > 127:
                 raise ValueError("Attribute name too long")
-            output += key_len.to_bytes(1, byteorder="big")
+            output += struct.pack('>B', key_len)
             output += key_bytes
 
             # Attribute type
             if isinstance(value, bool):
-                output += TypeSize.BOOLEAN.value.to_bytes(1, byteorder="big")
-                output += int(value).to_bytes(1, byteorder="big")
+                output += struct.pack('>B', TypeSize.BOOLEAN.value)
+                output += struct.pack('>B', int(value))
+                logging.debug(f"Encoding boolean {key} of value {value}")
 
             elif isinstance(value, int):
-                output += TypeSize.INT.value.to_bytes(1, byteorder="big")
-                output += value.to_bytes(BYTES_PER_INT, byteorder="big", signed=True)
+                output += struct.pack('>B', TypeSize.INT.value)
+                output += struct.pack('>i', value)
+                logging.debug(f"Encoding int {key} of value {value}")
 
             elif isinstance(value, float):
-                output += TypeSize.LONG.value.to_bytes(1, byteorder="big")
-                string_value = format(value, '.8f')
-
-                # Split float into integer using string
-                int_part = int(string_value.split(".")[0])
-                dec_part = int(string_value.split(".")[1])
-                output += int_part.to_bytes(BYTES_PER_INT, byteorder="big", signed=True)
-                output += dec_part.to_bytes(BYTES_PER_INT, byteorder="big", signed=False)
+                output += struct.pack('>B', TypeSize.DOUBLE.value)
+                output += struct.pack('>d', value)  # Changed 'f' to 'd'
+                logging.debug(f"Encoding double {key} of value {value}")
 
             elif isinstance(value, str):
-                output += TypeSize.STRING.value.to_bytes(1, byteorder="big")
+                output += struct.pack('>B', TypeSize.STRING.value)
                 value_bytes = value.encode("utf-8")
                 value_len = len(value_bytes)
                 if value_len > 127:
                     raise ValueError(f"Attribute value too long for key-value pair\n\t{key}:`{value}`")
-                output += value_len.to_bytes(BYTES_PER_INT, byteorder="big")
+                output += struct.pack('>i', value_len)
                 output += value_bytes
+                logging.debug(f"Encoding string {key} of length {value_len}")
 
             elif isinstance(value, AxoneStruct):
-                output += TypeSize.AXONESTRUCT.value.to_bytes(1, byteorder="big")
+                output += struct.pack('>B', TypeSize.AXONESTRUCT.value)
                 encoded_struct = value.encode()
-                output += len(encoded_struct).to_bytes(BYTES_PER_INT, byteorder="big")
+                output += struct.pack('>i', len(encoded_struct))
                 output += encoded_struct
 
             else:
@@ -339,43 +349,39 @@ class AxoneStruct:
 
         return output
 
+    @timeit_if_debug
     def decode(self, data) -> None:
         """Decode binary data and set attributes accordingly"""
         # Create an iterator from the data
         data_iter = iter(data)
 
         # Number of attributes
-        num_attrs = int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big")
-
-        # __BYTES_PER_INT__
-        BYTES_PER_INT = int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big")
+        num_attrs = struct.unpack('>B', bytes([next(data_iter)]))[0]
 
         for _ in range(num_attrs):
             # Attribute name
-            key_len = int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big")
+            key_len = struct.unpack('>B', bytes([next(data_iter)]))[0]
             key = bytes(next(data_iter) for _ in range(key_len)).decode("utf-8")
 
             # Attribute type
-            attr_type = TypeSize(int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big"))
+            attr_type = TypeSize(struct.unpack('>B', bytes([next(data_iter)]))[0])
 
             if attr_type == TypeSize.BOOLEAN:
-                value = bool(int.from_bytes(next(data_iter).to_bytes(1, byteorder='big'), byteorder="big"))
+                value = bool(struct.unpack('>B', bytes([next(data_iter)]))[0])
 
             elif attr_type == TypeSize.INT:
-                value = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big", signed=True)
+                value = struct.unpack('>i', bytes(next(data_iter) for _ in range(BYTES_PER_INT)))[0]
 
-            elif attr_type == TypeSize.LONG:
-                int_part = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big", signed=True)
-                dec_part = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big", signed=False)
-                value = float(f"{int_part}.{dec_part}")
+            elif attr_type == TypeSize.DOUBLE:
+                value = struct.unpack('>d', bytes(next(data_iter) for _ in range(2 * BYTES_PER_INT)))[0]
 
             elif attr_type == TypeSize.STRING:
-                value_len = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big")
+                value_len = struct.unpack('>i', bytes(next(data_iter) for _ in range(BYTES_PER_INT)))[0]
                 value = bytes(next(data_iter) for _ in range(value_len)).decode("utf-8")
 
             elif attr_type == TypeSize.AXONESTRUCT:
                 value = AxoneStruct()
-                value_len = int.from_bytes(bytes(next(data_iter) for _ in range(BYTES_PER_INT)), byteorder="big")
+                value_len = struct.unpack('>i', bytes(next(data_iter) for _ in range(BYTES_PER_INT)))[0]
                 value.decode(bytes(next(data_iter) for _ in range(value_len)))
 
             else:

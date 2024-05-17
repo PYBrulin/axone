@@ -73,6 +73,7 @@ class Publisher:
         self._topic.source_ = self._source
         self._topic.rate_ = self._rate
         self._topic.timestamp_ = time.time()
+        logging.debug(f"Topic {self._topic}")
         encoded = self._topic.encode()
         self._memory.buf[: len(encoded)] = bytes(encoded)
 
