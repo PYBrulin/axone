@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
 
 from axone.axone_struct import AxoneStruct
-from axone.custom_logger import setup_logger
 from axone.publisher import Publisher
 from axone.shared_memory import AxoneSharedMemory
 from axone.subscriber import Subscription
@@ -71,11 +70,17 @@ class AxoneNode:
             name: str
             timestamp: float
             # services: List[str]
+            services_server_port: int
             # parameters: Dict[str, Any]
 
         def __init__(self, name: str, node_id: str, **kwargs) -> None:
             self.node_name = name
             self.node_id = node_id
+
+            self.services = kwargs.get("services", [])  # List of services
+            self.services_server_port = (
+                0 if not len(self.services) else kwargs.get("services_server_port", 0)
+            )  # Port to access the services
 
             self.node_status = self.NodeStatus()
 
@@ -90,7 +95,8 @@ class AxoneNode:
             """Advertise the node to the centralized memory."""
             self.memory['name'] = self.node_name
             self.memory['timestamp'] = time.time()
-            # self.memory['services'] = "something"
+            # self.memory['services'] = self.services
+            self.memory['services_server_port'] = self.services_server_port
             # self.memory['parameters'] = {}
             # self.memory['topics'] = []
 
@@ -128,7 +134,7 @@ class AxoneNode:
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
         self._subscriptions: Dict[str, Subscription] = {}
-        # self._services_map: Dict[str, Callable] = {}
+        self._services_map: Dict[str, Callable] = {}
 
         self._last_federation_time = 0  # The time at which the memory was last federated.
 
@@ -293,7 +299,7 @@ class AxoneNode:
 
             # Check if it is time to listen
             # TODO: Limit rate if the topic is not published
-            if time.time() - self.subscriptions[topic_name].last_update > float(1 / self.subscriptions[topic_name].rate):
+            if time.time() - self.subscriptions[topic_name].last_timestamp > float(1 / self.subscriptions[topic_name].rate):
                 topic_struct = self._listen_for_topic(topic_name)
                 if topic_struct is not None:
                     logging.debug(f"Received topic {topic_name}.")
@@ -362,28 +368,3 @@ class AxoneNode:
 
         if self.publishers:
             self._publish_loop()
-
-
-if __name__ == "__main__":
-    setup_logger(debug=True)
-    node = AxoneNode("test_node_to_central", centralized_memory_endpoint="test")
-    node.start()
-
-    class SubMessage(AxoneStruct):
-        x: int = 0
-        y: float = 1.2
-        z: str = "34"
-
-    example_topic = SubMessage()
-
-    try:
-        while True:
-            example_topic.x += 1
-            node.publish_once(
-                example_topic,
-            )
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.stop()

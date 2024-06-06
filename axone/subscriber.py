@@ -15,8 +15,8 @@ class Subscription:
     ) -> None:
         self._name: str = topic_name
         self._rate: float = rate
-        self._last_update: float = 0
-        self._last_fetch: float = 0
+        self._timestamp: float = 0
+        self._last_timestamp: float = 0
 
         self._topic = AxoneStruct()
 
@@ -52,13 +52,13 @@ class Subscription:
         return self._rate
 
     @property
-    def last_update(self) -> float:
+    def timestamp(self) -> float:
         """The timestamp of the last update of the topic"""
-        return self._last_update
+        return self._timestamp
 
     @property
-    def last_fetch(self) -> float:
-        return self._last_fetch
+    def last_timestamp(self) -> float:
+        return self._last_timestamp
 
     @property
     def callbacks(self) -> List[Callable]:
@@ -71,7 +71,7 @@ class Subscription:
 
     def subscribe(self) -> Any:
         """Get the latest message from the topic"""
-        self._last_fetch = time.time()
+        self._last_timestamp = time.time()
 
         # Check that the memory is not empty
         if self._memory is None:
@@ -84,7 +84,10 @@ class Subscription:
 
         self._topic.decode(encoded)
 
-        self._last_update = self._topic.timestamp_  # This comes from the topic itself
+        self._timestamp = self._topic.timestamp_  # This comes from the topic itself
+        self._new_message = self._timestamp != self._last_timestamp
+        self._last_timestamp = self._timestamp
+
         self._rate = self._topic.rate_  # This comes from the topic itself
 
         # Note: Calling the callbacks is done in the main loop not here

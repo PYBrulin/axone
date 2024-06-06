@@ -2,22 +2,24 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-    - id: trailing-whitespace
-    - id: check-case-conflict
-    - id: end-of-file-fixer
-    - id: name-tests-test
-    - id: requirements-txt-fixer
+      - id: trailing-whitespace
+      - id: check-case-conflict
+      - id: end-of-file-fixer
+      - id: name-tests-test
+        args: ["--pytest-test-first"]
+      - id: check-toml
+      - id: requirements-txt-fixer
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
-    - id: isort
-      args: ["--profile", "black", "--filter-files"]
+      - id: isort
+        args: ["--profile", "black", "--filter-files"]
 
   - repo: https://github.com/psf/black
     rev: 24.4.2
     hooks:
-    - id: black
+      - id: black
 
   - repo: https://github.com/PyCQA/flake8
     rev: 7.0.0

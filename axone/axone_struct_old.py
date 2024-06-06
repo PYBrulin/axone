@@ -2,9 +2,20 @@ import inspect
 import logging
 import struct
 import time
+from enum import Enum
 from typing import Any, Iterator, Optional
 
 from axone.utils import timeit_if_debug
+
+
+class TypeSize(Enum):
+    BOOLEAN = 0
+    INT = 1
+    DOUBLE = 2
+    STRING = 3
+    LIST = 4
+    AXONESTRUCT = 10
+
 
 BYTES_PER_INT = struct.calcsize('i')  # TODO: Change to numpy dtypes
 
@@ -41,6 +52,22 @@ class AxoneStruct:
     def __init__(self) -> None:
         pass
 
+    # def list_all_attrs(self) -> None:
+    #     print(self.__class__.__name__)
+    #     print("> Instance attributes:")
+    #     for key, value in self.__dict__.items():
+    #         if not key.startswith("_") and not callable(value):
+    #             print(" |", key, type(value), value)  # if not callable(value) else call_value(value, self))
+    #     print("> Class attributes:")
+    #     for key, value in self.__class__.__dict__.items():
+    #         if not key.startswith("_"):
+    #             print(" |", key, type(value), value if not callable(value) else call_value(value, self))
+    #     print("> Method Resolution Order:")
+    #     for cls in self.__class__.mro()[1:]:
+    #         subattrs = [key for key in cls.__dict__.keys() if not key.startswith("_")]
+    #         if subattrs:
+    #             print(" |", cls.__name__, subattrs)
+
     def __str__(self) -> str:
         out = self.__class__.__name__
         for key, value in self.__attributes__.items():
@@ -51,6 +78,59 @@ class AxoneStruct:
                 else:
                     out += f"\n │ {key} {type(value)} {value if not callable(value) else call_value(value, self)}"
         return out
+
+    # @property
+    # def __attributes__(self) -> str:
+    #     instance_attrs = {
+    #         key: value if not callable(value) else call_value(value, self)
+    #         for key, value in self.__dict__.items()
+    #         if not key.startswith("_")
+    #     }
+    #     class_attrs = {
+    #         key: value if not callable(value) else call_value(value, self)
+    #         for key, value in self.__class__.__dict__.items()
+    #         if not key.startswith("_")
+    #     }
+    #     mro_attrs = {
+    #         key: value if not callable(value) else call_value(value, self)
+    #         for cls in self.__class__.mro()[1:]
+    #         for key, value in cls.__dict__.items()
+    #         if not key.startswith("_")
+    #     }
+    #     attrs = {
+    #         **mro_attrs,
+    #         **class_attrs,
+    #         **instance_attrs,
+    #     }
+
+    #     # Remove all value that have None
+    #     return {key: value for key, value in attrs.items() if value is not None}
+
+    # @property
+    # def __attributes__(self) -> str:
+    #     attrs = {}
+
+    #     # Start from the base classes
+    #     for cls in reversed(self.__class__.mro()):
+    #         print([key for key in self.__dict__.keys()])
+    #         cls_attrs = {
+    #             key: value  # if not callable(value) else call_value(value, self)
+    #             for key, value in cls.__dict__.items()
+    #             if not key.startswith("_") and key not in attrs and not callable(value)
+    #         }
+    #         attrs.update(cls_attrs)
+
+    #     # Then add the instance attributes
+    #     print([key for key in self.__dict__.keys()])
+    #     instance_attrs = {
+    #         key: value if not callable(value) else call_value(value, self)
+    #         for key, value in self.__dict__.items()
+    #         if not key.startswith("_")
+    #     }
+    #     attrs.update(instance_attrs)
+
+    #     # Remove all value that have None
+    #     return {key: value for key, value in attrs.items() if value is not None}
 
     def list_instance_attributes(self, instance=None):
         out = {}
@@ -108,6 +188,23 @@ class AxoneStruct:
         except AttributeError:
             return default
 
+    # def keys(self) -> Iterator[str]:
+    #     return self.__attributes__.keys()
+
+    # def values(self) -> Iterator[Any]:
+    #     return self.__attributes__.values()
+
+    # def items(self) -> ItemsView:
+    #     return self.__attributes__.items()
+
+    # def pop(self, key: str, default: Optional[Any] = None) -> Any:
+    #     try:
+    #         value = getattr(self, key)
+    #         delattr(self, key)
+    #         return value
+    #     except AttributeError:
+    #         return default
+
     def update(self, other: Any) -> None:
         for key, value in other.items():
             setattr(self, key, value)
@@ -132,6 +229,11 @@ class AxoneStruct:
         # Number of attributes
         approx_size = 2
 
+        # for key in self.__attributes__:
+        #     value = getattr(self, key)
+
+        #     value = call_value(value, self)
+
         for key, value in self.__attributes__.items():
 
             # Attribute name
@@ -141,13 +243,13 @@ class AxoneStruct:
 
             # Attribute type
             if isinstance(value, bool):
-                approx_size += 1 + struct.calcsize('b')
+                approx_size += 1 + 1  # struct.calcsize('b')
             elif isinstance(value, int):
-                approx_size += 1 + struct.calcsize('i')
+                approx_size += 1 + 4  # struct.calcsize('i')
             elif isinstance(value, float):
-                approx_size += 1 + struct.calcsize('d')
+                approx_size += 1 + 8  # struct.calcsize('d')
             elif isinstance(value, str):
-                approx_size += 5 + 127  # Allow for a string of 127 characters max
+                approx_size += 1 + 127  # Allow for a string of 127 characters max
             elif isinstance(value, list):
                 # lists are tricky, we need to encode the length of the list and then the length of each element
                 approx_size += 1 + 4  # 1 for the type, 4 for the length of the list
@@ -187,7 +289,7 @@ class AxoneStruct:
         # Number of attributes
         logging.debug(f"Encoding {len(self)} attributes")
 
-        output = struct.pack('I', len(self.__attributes__))
+        output = struct.pack('>B', len(self.__attributes__))
 
         for key, value in self.__attributes__.items():
             # Attribute name
@@ -195,46 +297,43 @@ class AxoneStruct:
             key_len = len(key_bytes)
             if key_len > 127:
                 raise ValueError("Attribute name too long")
-            # Use the "native size" format to encode the string length since it is variable
-            output += f'n{key_len}s'.encode()
+            output += struct.pack('>B', key_len)
             output += key_bytes
-            logging.debug(f"Encoding attribute name {key} of length {key_len}")
 
             # Attribute type
             if isinstance(value, bool):
-                output += b'?'
-                output += struct.pack('?', value)
+                output += struct.pack('>B', TypeSize.BOOLEAN.value)
+                output += struct.pack('>B', int(value))
                 logging.debug(f"Encoding boolean {key} of value {value}")
 
             elif isinstance(value, int):
-                output += b'i'
-                output += struct.pack('i', value)
+                output += struct.pack('>B', TypeSize.INT.value)
+                output += struct.pack('>i', value)
                 logging.debug(f"Encoding int {key} of value {value}")
 
             elif isinstance(value, float):
-                # TODO: Should we check between 'float' and 'double' to optimize the size?
-                output += b'd'
-                output += struct.pack('d', value)
+                output += struct.pack('>B', TypeSize.DOUBLE.value)
+                output += struct.pack('>d', value)  # Changed 'f' to 'd'
                 logging.debug(f"Encoding double {key} of value {value}")
 
             elif isinstance(value, str):
+                output += struct.pack('>B', TypeSize.STRING.value)
                 value_bytes = value.encode("utf-8")
                 value_len = len(value_bytes)
                 if value_len > 127:
                     raise ValueError(f"Attribute value too long for key-value pair\n\t{key}:`{value}`")
-                # Use the "native size" format to encode the string length since it is variable
-                output += f'n{value_len}s'.encode()
+                output += struct.pack('>i', value_len)
                 output += value_bytes
-                logging.debug(f"Encoding string {value} of length {value_len}")
+                logging.debug(f"Encoding string {key} of length {value_len}")
 
             elif isinstance(value, AxoneStruct):
-                output += b"A"
+                output += struct.pack('>B', TypeSize.AXONESTRUCT.value)
                 encoded_struct = value.encode()
-                output += struct.pack('i', len(encoded_struct))
+                output += struct.pack('>i', len(encoded_struct))
                 output += encoded_struct
 
             else:
-                raise ValueError(f"Unknown attribute type {type(value)} for key-value pair\n\t{key}:'{value}'")
+                raise ValueError(f"Unknown attribute type {type(value)} for key-value pair\n\t{key}:`{value}`")
 
         return output
 
@@ -245,50 +344,38 @@ class AxoneStruct:
         data_iter = iter(data)
 
         # Number of attributes
-        num_attrs = struct.unpack('I', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
+        num_attrs = struct.unpack('>B', bytes([next(data_iter)]))[0]
 
         for _ in range(num_attrs):
-
-            # Get the attribute name first
             # Attribute name
-            # Ensure the next character is a 'n' to indicate the length of the attribute name
-            if next(data_iter) != ord('n'):
-                raise ValueError("Attribute name should start with 'n'")
-            # Get the next characters until a 's' is found
-            key_len = ""
-            while True:
-                _charac = chr(next(data_iter))
-                key_len += _charac
-                if _charac.isalpha():
-                    break
-            key_len = int(key_len[:-1])
+            key_len = struct.unpack('>B', bytes([next(data_iter)]))[0]
             key = bytes(next(data_iter) for _ in range(key_len)).decode("utf-8")
-            logging.debug(f"Decoding attribute {key}")
 
-            # Get next byte to determine the type of the attribute
-            attr_type = chr(next(data_iter))
-            logging.debug(f"Attribute type {attr_type}")
+            # Attribute type
+            attr_type = TypeSize(struct.unpack('>B', bytes([next(data_iter)]))[0])
 
-            if attr_type == 'n':  # if "native size"
-                # Get the next characters until a 's' or any alphabetical character is found
-                value_len = ""
-                while True:
-                    _charac = chr(next(data_iter))
-                    value_len += _charac
-                    if _charac.isalpha():
-                        break
-                value_len = int(value_len[:-1])
+            if attr_type == TypeSize.BOOLEAN:
+                value = bool(struct.unpack('>B', bytes([next(data_iter)]))[0])
+
+            elif attr_type == TypeSize.INT:
+                value = struct.unpack('>i', bytes(next(data_iter) for _ in range(BYTES_PER_INT)))[0]
+
+            elif attr_type == TypeSize.DOUBLE:
+                value = struct.unpack('>d', bytes(next(data_iter) for _ in range(2 * BYTES_PER_INT)))[0]
+
+            elif attr_type == TypeSize.STRING:
+                value_len = struct.unpack('>i', bytes(next(data_iter) for _ in range(BYTES_PER_INT)))[0]
                 value = bytes(next(data_iter) for _ in range(value_len)).decode("utf-8")
 
-            elif attr_type == 'A':
+            elif attr_type == TypeSize.AXONESTRUCT:
                 value = AxoneStruct()
-                value_len = struct.unpack('i', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
+                value_len = struct.unpack('>i', bytes(next(data_iter) for _ in range(BYTES_PER_INT)))[0]
                 value.decode(bytes(next(data_iter) for _ in range(value_len)))
 
-            else:  # Let struct handle the rest
-                value = struct.unpack(attr_type, bytes(next(data_iter) for _ in range(struct.calcsize(attr_type))))[0]
+            else:
+                raise ValueError(f"Unknown attribute type {attr_type}")
 
-            logging.debug(f"Setting attribute {key} to {value if not attr_type == 'A' else type(value)}")
+            logging.debug(f"Setting attribute {key} to {value if not attr_type == TypeSize.AXONESTRUCT else type(value)}")
             setattr(self, key, value)
 
 
