@@ -1,12 +1,15 @@
 import json
 import logging
 import os
+import socket
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
 
-from axone.axone_struct import AxoneStruct
+from axone.axone_struct import AxoneStruct, standard_data_decoding, standard_data_encoding
 from axone.publisher import Publisher
+from axone.service_server import ServiceServer, recv_msg, send_msg
 from axone.shared_memory import AxoneSharedMemory
 from axone.subscriber import Subscription
 from axone.utils import generate_uuid
@@ -69,17 +72,18 @@ class AxoneNode:
         class NodeStatus(AxoneStruct):
             name: str
             timestamp: float
-            # services: List[str]
-            services_server_port: int
+            services: list[str]
+            services_server_port: int | str
             # parameters: Dict[str, Any]
 
         def __init__(self, name: str, node_id: str, **kwargs) -> None:
             self.node_name = name
             self.node_id = node_id
 
-            self.services = kwargs.get("services", [])  # List of services
+            self.services_names = kwargs.get("services_names", [])  # String representation of the available services
+            self.services_names = ",".join(self.services_names) if self.services_names else ""
             self.services_server_port = (
-                0 if not len(self.services) else kwargs.get("services_server_port", 0)
+                0 if not self.services_names else kwargs.get("services_server_port", 0)
             )  # Port to access the services
 
             self.node_status = self.NodeStatus()
@@ -95,8 +99,8 @@ class AxoneNode:
             """Advertise the node to the centralized memory."""
             self.memory['name'] = self.node_name
             self.memory['timestamp'] = time.time()
-            # self.memory['services'] = self.services
-            self.memory['services_server_port'] = self.services_server_port
+            self.memory['services'] = self.services_names
+            self.memory['services_port'] = self.services_server_port
             # self.memory['parameters'] = {}
             # self.memory['topics'] = []
 
@@ -127,14 +131,25 @@ class AxoneNode:
         self.centralized_node = self.CentralizedNode(self.name, self.node_id, **kwargs)
         self.centralized_node.advertise()
 
-        # Create the self node
-        self.self_node = self.SelfNode(self.name, self.node_id, **kwargs)
-        self.self_node.advertise()
+        # services parameters
+        self.service_server = None
+        self._services = kwargs.get("services", None)
+        # self._hide_services = kwargs.get("hide_services", False)
+        self.setup_service_server()
 
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
         self._subscriptions: Dict[str, Subscription] = {}
-        self._services_map: Dict[str, Callable] = {}
+
+        # Create the "self" node
+        self.self_node = self.SelfNode(
+            name=self.name,
+            node_id=self.node_id,
+            services_names=self.service_server.services_keys if self.service_server is not None else [],
+            services_server_port=self.service_server.server_port if self.service_server is not None else 0,
+            **kwargs,
+        )
+        self.self_node.advertise()
 
         self._last_federation_time = 0  # The time at which the memory was last federated.
 
@@ -171,22 +186,33 @@ class AxoneNode:
         """
         return self.centralized_node.memory.struct.list_instance_attributes().get(generate_uuid(name), None)
 
-    def list_node_services(self, name: str):
+    def get_node_configuration(self, name: str):
         """List the services available for a node."""
         node = self.find_node_by_name(name)
         if node is None:
             logging.debug(f"Node {name} does not exist.")
             return None
 
-        # Connect to the node memory
+        # Connect to the requested node memory
         with AxoneSharedMemory(name=generate_uuid(node), centralized=False) as node_memory:
             # Check if the node as the attribute services
-            if "services" not in node_memory:
-                logging.debug(f"Node {name} is NOT advertising services.")
-                return None
-
             logging.debug(f"Node {name} has the attribute services.")
-            return node_memory["services"]
+            return node_memory.struct.list_instance_attributes()
+
+    def list_node_services(self, name: str):
+        """List the services available for a node."""
+        node_struct = self.get_node_configuration(name)
+        if node_struct is None:
+            return None
+        return node_struct.get("services", None)
+
+    def get_node_services_server_port(self, name: str):
+        """List the services available for a node."""
+        node_struct = self.get_node_configuration(name)
+        print(name, node_struct)
+        if node_struct is None:
+            return None
+        return node_struct.get("services_port", None)
 
     def is_node_advertising_services(self, name: str) -> bool:
         """Check if a node is advertising services."""
@@ -324,6 +350,125 @@ class AxoneNode:
 
     # endregion Subscriber functions
 
+    # region Services functions
+    @property
+    def services(self) -> Dict[str, Callable]:
+        """Return the node services."""
+        return self._services
+
+    def setup_service_server(self) -> None:
+        """Setup the service server."""
+        if self.services is None:
+            return
+
+        # Create and start the service server
+        self.service_server = ServiceServer(
+            services=self.services,
+            node_uuid=self.node_id,
+        )
+        logging.info(f"Starting service server for node {self.node_id}:{self.name} with {len(self.services)} services.")
+
+    def _call_service(
+        self,
+        dest_node_id: Optional[str] = None,
+        dest_node_name: Optional[str] = None,
+        service_name: str = None,
+        # answer: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """Call an service on a node."""
+        # Check if the service is available
+        # We need to check if the node is available first, otherwise the service
+        #  buffer will get congested with inexistent service calls
+        # Note: This fnction used to check if the service was registered on the
+        #  destination node. However, it is now possible to hide services from
+        #  the memory. Therefore, the destination node will be the only one
+        #  responsible for checking if the service is available or not.
+
+        if dest_node_id is None and dest_node_name is None:
+            self.logger.error("Either dest_node_id or dest_node_name must be specified.")
+            return
+
+        if dest_node_id is None and dest_node_name is not None:
+            dest_node_id = generate_uuid(dest_node_name)
+
+        if service_name is None:
+            self.logger.error("Service name must be specified.")
+            return
+
+        services_advertised = self.list_node_services(dest_node_name)
+        if services_advertised is None:
+            self.logger.error(f"Node {dest_node_name} is not advertising any services.")
+            return
+
+        if service_name not in services_advertised:
+            # service is not available
+            # No need to call the service
+            self.logger.warning(
+                f"No service with name {service_name} has been advertised by "
+                + f"node {dest_node_id} to call. However, the node might "
+                + "be hiding its services. The call will be made anyway."
+            )
+
+        server_port = self.get_node_services_server_port(dest_node_name)
+
+        if sys.platform != 'win32':
+            family = socket.AF_UNIX
+            server_address = f'/tmp/{server_port}_socket'
+        else:
+            family = socket.AF_INET
+            input_port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+            if input_port == 0:
+                raise ValueError("Please provide a port number")
+            server_address = ('localhost', input_port)
+        try:
+            # Create a socket
+            sock = socket.socket(family, socket.SOCK_STREAM)
+
+            # Connect the socket to the port where the server is listening
+            logging.info(f'Connecting to {server_address}')
+            sock.connect(server_address)
+        except OSError as err:
+            logging.error(f'Socket error: {err}')
+            sock.close()
+            return
+
+        # Encode the message
+        message = standard_data_encoding(
+            func=service_name,
+            **kwargs,
+        )
+
+        logging.info(f'sending {message!r}')
+        send_msg(sock, message)
+
+        # Look for the response
+        data = recv_msg(sock)
+        logging.info(f'received {standard_data_decoding(data)!r}')
+
+        self.logger.debug(
+            f"Called service {service_name} on node {dest_node_id}.",
+        )
+
+    def call_service(
+        self,
+        dest_node_id: Optional[str] = None,
+        dest_node_name: Optional[str] = None,
+        service_name: Optional[str] = None,
+        # answer: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """Call an service on a node."""
+        self._call_service(
+            dest_node_id=dest_node_id,
+            dest_node_name=dest_node_name,
+            service_name=service_name,
+            # answer=answer,
+            **kwargs,
+        )
+
+    # endregion Services functions
+
     def start(self) -> None:
         # Initialize a Thread to listen to the memory events
         # Initialize a Thread to cleanup the memory periodically
@@ -331,8 +476,13 @@ class AxoneNode:
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._executor.submit(self._server)
 
+        if self.services is not None:
+            self.service_server.start()
+
     def stop(self) -> None:
         self._server_should_run = False
+        if self.service_server is not None:
+            self.service_server.stop()
 
     def _server(self) -> None:
         """
@@ -351,7 +501,7 @@ class AxoneNode:
 
     def _server_exec(self) -> None:
         if time.time() - self._last_federation_time > 1:
-            logging.debug("Update execution")
+            # logging.debug("Update execution")
             # TODO: Group this in a dedicated function
             self._last_federation_time = time.time()
 

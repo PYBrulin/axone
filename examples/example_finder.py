@@ -36,13 +36,19 @@ class ExampleNodeFinder:
             self.node.start()
 
             while True:
+                print("=" * 50)
+                node_list = self.node.list_nodes()
+                print("Node lists:", node_list)
+                # print(
+                #     "Searching for example_publisher:",
+                #     "Found" if self.node.find_node_by_name('example_publisher') is not None else "Not Found",
+                # )
+                # print("Services available:", self.node.is_node_advertising_services("example_publisher"))
 
-                print("Node lists:", self.node.list_nodes())
-                print(
-                    "Searching for example_publisher:",
-                    "Found" if self.node.find_node_by_name('example_publisher') is not None else "Not Found",
-                )
-                print("Services available:", self.node.is_node_advertising_services("example_publisher"))
+                for node_id, node_name in node_list.items():
+                    print("ID:", node_id, "Node:", node_name)
+                    print("Configuration:", self.node.get_node_configuration(node_name))
+                    print("Services available:", self.node.is_node_advertising_services(node_name))
 
                 time.sleep(1)
 

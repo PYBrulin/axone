@@ -4,8 +4,7 @@ import time
 from typing import Dict, NoReturn
 
 from axone.custom_logger import setup_logger
-from axone.node import Node
-from axone.node_process import NodeProcess
+from axone.node import AxoneNode
 
 
 class ExampleNodePerformer:
@@ -34,27 +33,30 @@ class ExampleNodePerformer:
                 "z": "float",
             },
             self.stop: {},
+            self.simple_addition: {
+                "a": "float",
+                "b": "float",
+            },
         }
 
         # Register node
-        if not self.use_process:
-            self.node = Node(
-                name="example_performer",
-                memory_endpoint="ExampleNodeMemory",
-                memory_size=4096,
-                parameters=self.parameters,
-                services=services,
-                # hide_services=True,
-            )
-        else:
-            self.node = NodeProcess(
-                name="example_performer",
-                memory_endpoint="ExampleNodeMemory",
-                memory_size=4096,
-                parameters=self.parameters,
-                services=services,
-                # hide_services=True,
-            )
+        # if not self.use_process:
+        self.node = AxoneNode(
+            name="example_performer",
+            centralized_memory_endpoint="ExampleNodeMemory",
+            parameters=self.parameters,
+            services=services,
+            # hide_services=True,
+        )
+        # else:
+        #     self.node = NodeProcess(
+        #         name="example_performer",
+        #         memory_endpoint="ExampleNodeMemory",
+        #         memory_size=4096,
+        #         parameters=self.parameters,
+        #         services=services,
+        #         # hide_services=True,
+        #     )
 
     # region service callbacks
     def print(self, message: str) -> None:
@@ -80,6 +82,9 @@ class ExampleNodePerformer:
     def stop(self) -> None:
         print("Stopping")
 
+    def simple_addition(self, a, b):
+        return a + b
+
     # endregion
 
     def run(self) -> NoReturn:
@@ -91,17 +96,17 @@ class ExampleNodePerformer:
             self.node.start()
 
             while True:
-                self.node.update_parameters(self.parameters)  # Update the parameters displayed in the node info
+                # self.node.update_parameters(self.parameters)  # Update the parameters displayed in the node info
                 time.sleep(1)
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
         finally:
-            if not self.use_process:
-                self.node._memory.shm.close()
-            else:
-                self.node.stop()
+            # if not self.use_process:
+            #     self.node._memory.shm.close()
+            # else:
+            self.node.stop()
             del self.node
 
 

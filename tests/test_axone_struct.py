@@ -1,7 +1,7 @@
 import time
 import unittest
 
-from axone.axone_struct import AxoneStruct, AxoneTopic
+from axone.axone_struct import AxoneStruct, AxoneTopic, standard_data_decoding, standard_data_encoding
 
 # Required to disable error reporting for long lines
 # flake8: noqa
@@ -131,8 +131,9 @@ class TestAxoneStruct(unittest.TestCase):
     #     self.assertEqual(topic_decoded.a_callable(1), 2)
 
     def test_pack_message_callback(self):
+        now = time.time()
         topic = ATopicPassedToAxone()
-        topic.message_callback = f"Hello message_callback from topic_published_rate_func {2 * time.time()}"
+        topic.message_callback = f"Hello message_callback from topic_published_rate_func {2 * now}"
         encoded_message = topic.encode()
 
         # Decode
@@ -140,8 +141,63 @@ class TestAxoneStruct(unittest.TestCase):
         topic_decoded.decode(encoded_message)
         self.assertEqual(
             topic_decoded.message_callback,
-            f"Hello message_callback from topic_published_rate_func {2 * time.time()}",
+            f"Hello message_callback from topic_published_rate_func {2 * now}",
         )
+
+
+class TestStandardDataEncoding(unittest.TestCase):
+    def test_encode_single_attribute(self):
+        # Test bool
+        self.assertEqual(standard_data_encoding(a=True), b'\x01\x00\x00\x00n1sa?\x01')
+        # Test int
+        self.assertEqual(standard_data_encoding(b=1), b'\x01\x00\x00\x00n1sbi\x01\x00\x00\x00')
+        # Test float
+        self.assertEqual(standard_data_encoding(c=1.0), b'\x01\x00\x00\x00n1scd\x00\x00\x00\x00\x00\x00\xf0?')
+        # Test str
+        self.assertEqual(standard_data_encoding(d='hello'), b'\x01\x00\x00\x00n1sdn5shello')
+
+    def test_encode_multiple_attributes(self):
+        print(standard_data_encoding(a=True, b=1, c=1.0, d='hello'))
+        self.assertEqual(
+            standard_data_encoding(a=True, b=1, c=1.0, d='hello'),
+            b'\x04\x00\x00\x00n1sa?\x01n1sbi\x01\x00\x00\x00n1scd\x00\x00\x00\x00\x00\x00\xf0?n1sdn5shello',
+        )
+
+    def test_encode_empty_attribute(self) -> None:
+        self.assertEqual(standard_data_encoding(a=None), b'\x01\x00\x00\x00n1sax\x00')
+
+    def test_encode_long_string_value(self):
+        with self.assertRaises(ValueError):
+            standard_data_encoding(a='a' * 128)
+
+    def test_encode_unsupported_type(self):
+        with self.assertRaises(ValueError):
+            standard_data_encoding(a=[])
+
+    def test_decode_single_attribute(self):
+        # Test bool
+        self.assertEqual(standard_data_decoding(b'\x01\x00\x00\x00n1sa?\x01'), {'a': True})
+        # Test int
+        self.assertEqual(standard_data_decoding(b'\x01\x00\x00\x00n1sbi\x01\x00\x00\x00'), {'b': 1})
+        # Test float
+        self.assertEqual(standard_data_decoding(b'\x01\x00\x00\x00n1scd\x00\x00\x00\x00\x00\x00\xf0?'), {'c': 1.0})
+        # Test str
+        self.assertEqual(standard_data_decoding(b'\x01\x00\x00\x00n1sdn5shello'), {'d': 'hello'})
+
+    def test_decode_multiple_attributes(self):
+        self.assertEqual(
+            standard_data_decoding(
+                b'\x04\x00\x00\x00n1sa?\x01n1sbi\x01\x00\x00\x00n1scd\x00\x00\x00\x00\x00\x00\xf0?n1sdn5shello'
+            ),
+            {'a': True, 'b': 1, 'c': 1.0, 'd': 'hello'},
+        )
+
+    def test_decode_empty_attribute(self) -> None:
+        self.assertEqual(standard_data_decoding(b'\x01\x00\x00\x00n1sax\x00'), {'a': None})
+
+    def test_decode_unsupported_type(self):
+        with self.assertRaises(ValueError):
+            standard_data_decoding(b'\x01\x00\x00\x00A\x01')
 
 
 if __name__ == '__main__':

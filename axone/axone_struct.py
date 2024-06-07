@@ -33,6 +33,130 @@ def call_value(value, instance=None):
     return result
 
 
+def standard_data_encoding(*args, **kwargs) -> bytes:
+    # Create temp arguments keys for args
+    for i, arg in enumerate(args):
+        kwargs[f"_arg_{i}"] = arg
+
+    # Number of attributes
+    logging.debug(f"Encoding {len(kwargs)} attributes")
+
+    output = struct.pack('I', len(kwargs))
+
+    for key, value in kwargs.items():
+        # Attribute name
+        key_bytes = key.encode("utf-8")
+        key_len = len(key_bytes)
+        if key_len > 127:
+            raise ValueError("Attribute name too long")
+        # Use the "native size" format to encode the string length since it is variable
+        output += f'n{key_len}s'.encode()
+        output += key_bytes
+        logging.debug(f"Encoding attribute name {key} of length {key_len}")
+
+        # Attribute type
+        if value is None:
+            output += b'x'
+            output += struct.pack('!x')
+            logging.debug(f"Encoding empty attribute {key}")
+
+        elif isinstance(value, bool):
+            output += b'?'
+            output += struct.pack('?', value)
+            logging.debug(f"Encoding boolean {key} of value {value}")
+
+        elif isinstance(value, int):
+            output += b'i'
+            output += struct.pack('i', value)
+            logging.debug(f"Encoding int {key} of value {value}")
+
+        elif isinstance(value, float):
+            # TODO: Should we check between 'float' and 'double' to optimize the size?
+            output += b'd'
+            output += struct.pack('d', value)
+            logging.debug(f"Encoding double {key} of value {value}")
+
+        elif isinstance(value, str):
+            value_bytes = value.encode("utf-8")
+            value_len = len(value_bytes)
+            if value_len > 127:
+                raise ValueError(f"Attribute value too long for key-value pair\n\t{key}:`{value}`")
+            # Use the "native size" format to encode the string length since it is variable
+            output += f'n{value_len}s'.encode()
+            output += value_bytes
+            logging.debug(f"Encoding string {value} of length {value_len}")
+
+        # AxoneStructs are not supported here
+        # elif isinstance(value, AxoneStruct):
+        #     output += b"A"
+        #     encoded_struct = value.encode()
+        #     output += struct.pack('i', len(encoded_struct))
+        #     output += encoded_struct
+
+        else:
+            raise ValueError(f"Unknown attribute type {type(value)} for key-value pair\n\t{key}:'{value}'")
+
+    return output
+
+
+def standard_data_decoding(data) -> dict:
+    # Create an iterator from the data
+    data_iter = iter(data)
+
+    # Number of attributes
+    num_attrs = struct.unpack('I', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
+
+    out = {}
+
+    for _ in range(num_attrs):
+
+        # Get the attribute name first
+        # Attribute name
+        # Ensure the next character is a 'n' to indicate the length of the attribute name
+        if next(data_iter) != ord('n'):
+            raise ValueError("Attribute name should start with 'n'")
+        # Get the next characters until a 's' is found
+        key_len = ""
+        while True:
+            _charac = chr(next(data_iter))
+            key_len += _charac
+            if _charac.isalpha():
+                break
+        key_len = int(key_len[:-1])
+        key = bytes(next(data_iter) for _ in range(key_len)).decode("utf-8")
+        logging.debug(f"Decoding attribute {key}")
+
+        # Get next byte to determine the type of the attribute
+        attr_type = chr(next(data_iter))
+        logging.debug(f"Attribute type {attr_type}")
+
+        if attr_type == 'n':  # if "native size"
+            # Get the next characters until a 's' or any alphabetical character is found
+            value_len = ""
+            while True:
+                _charac = chr(next(data_iter))
+                value_len += _charac
+                if _charac.isalpha():
+                    break
+            value_len = int(value_len[:-1])
+            value = bytes(next(data_iter) for _ in range(value_len)).decode("utf-8")
+
+        # AxoneStructs are not supported here
+        # elif attr_type == 'A':
+        #     value = AxoneStruct()
+        #     value_len = struct.unpack('i', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
+        #     value.decode(bytes(next(data_iter) for _ in range(value_len)))
+
+        else:  # Let struct handle the rest
+            decoded = struct.unpack(attr_type, bytes(next(data_iter) for _ in range(struct.calcsize(attr_type))))
+            value = decoded[0] if len(decoded) == 1 else None  # Note: When value is None, the length of decoded is 0
+
+        logging.debug(f"Setting attribute {key} to {value if not attr_type == 'A' else type(value)}")
+        out[key] = value
+
+    return out
+
+
 class AxoneStruct:
 
     # Not the best way to do this, but it works for now
@@ -201,7 +325,12 @@ class AxoneStruct:
             logging.debug(f"Encoding attribute name {key} of length {key_len}")
 
             # Attribute type
-            if isinstance(value, bool):
+            if value is None:
+                output += b'x'
+                output += struct.pack('!x')
+                logging.debug(f"Encoding empty attribute {key}")
+
+            elif isinstance(value, bool):
                 output += b'?'
                 output += struct.pack('?', value)
                 logging.debug(f"Encoding boolean {key} of value {value}")
@@ -286,7 +415,8 @@ class AxoneStruct:
                 value.decode(bytes(next(data_iter) for _ in range(value_len)))
 
             else:  # Let struct handle the rest
-                value = struct.unpack(attr_type, bytes(next(data_iter) for _ in range(struct.calcsize(attr_type))))[0]
+                decoded = struct.unpack(attr_type, bytes(next(data_iter) for _ in range(struct.calcsize(attr_type))))
+                value = decoded[0] if len(decoded) == 1 else None  # Note: When value is None, the length of decoded is 0
 
             logging.debug(f"Setting attribute {key} to {value if not attr_type == 'A' else type(value)}")
             setattr(self, key, value)
