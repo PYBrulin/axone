@@ -33,11 +33,16 @@ class Publisher:
         self._topic.timestamp_ = time.time()
 
         # Create a shared memory for the topic
-        self._memory = SharedMemory(
-            name=self._uuid,
-            create=True,
-            size=topic.get_approximate_size(),
-        )
+        try:
+            self._memory = SharedMemory(
+                name=self._uuid,
+                create=True,
+                size=topic.get_approximate_size(),
+            )
+        except FileExistsError:
+            logging.warning(f"Shared memory {self._uuid} already exists")
+            # Try to open the shared memory if it already exists
+            self._memory = SharedMemory(name=self._uuid, create=False)
 
         # TODO : Implement unlink, close, etc for the SHM
 
