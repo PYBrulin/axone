@@ -1,11 +1,10 @@
-import json
 import logging  # noqa
 import os
 import time
 from typing import NoReturn
 
 from axone.custom_logger import setup_logger
-from axone.node import Node
+from axone.node import AxoneNode
 
 setup_logger(debug=False)
 
@@ -22,7 +21,7 @@ class ConfigFileNode:
 
     def __init__(self) -> None:
         # Register node
-        self.node = Node(
+        self.node = AxoneNode(
             name=self.__class__.__name__,
             config_file=os.path.join(
                 os.path.dirname(__file__),
@@ -32,8 +31,7 @@ class ConfigFileNode:
 
         print("Node registered")
         print("Node name:", self.node.name)
-        print("Node memory endpoint:", self.node.memory_endpoint)
-        print("Node memory size:", self.node.memory_size)
+        print("Node memory endpoint:", self.node.centralized_node.endpoint)
 
     def run(self) -> NoReturn:
         try:
@@ -41,24 +39,14 @@ class ConfigFileNode:
             # Which is a requirement for the NodeProcess variant
             self.node.start()
 
-            # No need to run forever for this example
-            # Read the memory content three times and then exit
-            for _ in range(3):
-                print("Memory content :")
-                print(
-                    json.dumps(
-                        dict(self.node._memory),
-                        sort_keys=True,
-                        indent=4,
-                    )
-                )
-                time.sleep(1)  # 1Hz
+            time.sleep(1)  # 1Hz
+            print("My work here is done.")
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
         finally:
-            self.node._memory.shm.close()
+            self.node.stop()
             del self.node
 
 

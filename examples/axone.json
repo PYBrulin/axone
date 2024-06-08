@@ -1,4 +1,4 @@
 {
-    "memory_endpoint": "ExampleNodeMemory",
-    "memory_size": 8192
+    "centralized_memory_endpoint": "ExampleNodeMemory",
+    "centralized_memory_size": 8192
 }
