@@ -12,7 +12,7 @@ from axone.publisher import Publisher
 from axone.service_server import ServiceServer, recv_msg, send_msg
 from axone.shared_memory import AxoneSharedMemory
 from axone.subscriber import Subscription
-from axone.utils import generate_uuid
+from axone.utils import generate_uuid, timeit_if_debug
 
 # from axone.subscription import Subscription
 
@@ -178,16 +178,23 @@ class AxoneNode:
         List all the attributes in the centralized memory.
         This is really simple as the centralized memory only contains the nodes ID and names.
         """
+        return self._list_nodes()
+
+    def _list_nodes(self) -> list[str]:
         return self.centralized_node.memory.struct.list_instance_attributes()
 
     def find_node_by_name(self, name: str) -> Optional[str]:
-        """
-        Search a node by name.
-        """
+        """Search a node by name"""
+        return self._find_node_by_name(name)
+
+    def _find_node_by_name(self, name: str) -> Optional[str]:
         return self.centralized_node.memory.struct.list_instance_attributes().get(generate_uuid(name), None)
 
     def get_node_configuration(self, name: str):
-        """List the services available for a node."""
+        """Get the configuration of a node."""
+        return self._get_node_configuration(name)
+
+    def _get_node_configuration(self, name: str):
         node = self.find_node_by_name(name)
         if node is None:
             logging.debug(f"Node {name} does not exist.")
@@ -201,6 +208,9 @@ class AxoneNode:
 
     def list_node_services(self, name: str):
         """List the services available for a node."""
+        return self._list_node_services(name)
+
+    def _list_node_services(self, name: str):
         node_struct = self.get_node_configuration(name)
         if node_struct is None:
             return None
@@ -208,6 +218,9 @@ class AxoneNode:
 
     def get_node_services_server_port(self, name: str):
         """List the services available for a node."""
+        return self._get_node_services_server_port(name)
+
+    def _get_node_services_server_port(self, name: str):
         node_struct = self.get_node_configuration(name)
         print(name, node_struct)
         if node_struct is None:
@@ -216,6 +229,9 @@ class AxoneNode:
 
     def is_node_advertising_services(self, name: str) -> bool:
         """Check if a node is advertising services."""
+        return self._is_node_advertising_services(name)
+
+    def _is_node_advertising_services(self, name: str) -> bool:
         return self.list_node_services(name) is not None
 
     # def _is_service_advertised(self, node_id: str, service: str) -> bool:
@@ -265,6 +281,7 @@ class AxoneNode:
         # Publish the message
         self.publishers[topic_name].publish(topic)
 
+    @timeit_if_debug
     def publish_once(
         self,
         topic: AxoneStruct,
@@ -305,20 +322,23 @@ class AxoneNode:
 
     def subscribe(self, topic_name: str, callback: Callable) -> None:
         """Subscribe to a topic."""
+        return self._subscribe(topic_name, callback)
+
+    def _subscribe(self, topic_name: str, callback: Callable) -> None:
         # Add the callback to the list of callbacks for this topic
-        if topic_name not in self.subscriptions:
+        if topic_name not in list(self.subscriptions):
             # Create a new subscription
             self.subscriptions[topic_name] = Subscription(topic_name)
             self.subscriptions[topic_name].callbacks.append(callback)
-            logging.debug(f"Registering subscription {topic_name} for node {self.node_id}:{self.name}.")
+            logging.info(f"Registering subscription {topic_name} for node {self.node_id}:{self.name}.")
         else:
             # Add the callback to the existing subscription
             self.subscriptions[topic_name].callbacks.append(callback)
-            logging.debug(f"Adding callback to subscription {topic_name} for node {self.node_id}:{self.name}.")
+            logging.info(f"Adding callback to subscription {topic_name} for node {self.node_id}:{self.name}.")
 
     def _listen_subscriptions(self) -> None:
         """Function called periodically to listen to topics."""
-        for topic_name in self.subscriptions:
+        for topic_name in list(self.subscriptions):
             # Do not listen to topics that need to be requested manually
             if self.subscriptions[topic_name].rate <= 0.0:
                 continue
@@ -344,6 +364,7 @@ class AxoneNode:
         sub.subscribe()
         return sub._topic
 
+    @timeit_if_debug
     def listen_once(self, topic: str) -> AxoneStruct:
         """Listen to a topic once."""
         return self._listen_once(topic)

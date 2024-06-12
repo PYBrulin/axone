@@ -9,7 +9,7 @@ class CustomFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    fmt = "[%(levelname)1.1s] %(asctime)s %(filename)s:%(lineno)d - %(message)s"
+    fmt = "[%(levelname)4s/%(processName)s(%(process)d)] %(asctime)s %(filename)s:%(lineno)d - %(message)s"
     datefmt = '%H:%M:%S'
 
     FORMATS = {

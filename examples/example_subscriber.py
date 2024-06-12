@@ -6,6 +6,7 @@ from typing import NoReturn
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import setup_logger
 from axone.node import AxoneNode
+from axone.node_process import AxoneNodeProcess
 
 # from axone.node_process import NodeProcess
 
@@ -20,18 +21,13 @@ class ExampleNodeSubscriber:
     """
 
     def __init__(self, use_process: bool = False) -> None:
+        self.use_process = use_process
         # Register node
-        # if not use_process:
-        self.node = AxoneNode(
-            name="example_subscriber",
+        NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
+        self.node = NodeClass(
+            name="example_publisher",
             centralized_memory_endpoint="ExampleNodeMemory",
         )
-        # else:
-        #     self.node = NodeProcess(
-        #         name="example_subscriber",
-        #         memory_endpoint="ExampleNodeMemory",
-        #         memory_size=4096,
-        #     )
         self.last_message = None
 
     def print(self, topic_struct: AxoneStruct) -> None:
@@ -45,12 +41,13 @@ class ExampleNodeSubscriber:
 
     def run(self) -> NoReturn:
         try:
-            self.node.subscribe("ARatedTopic", callback=self.print)
-            self.node.subscribe("ARatedCallbackTopic", callback=self.print_callback)
-
             # Note start the node after registering the subscribers
             # Which is a requirement for the NodeProcess variant
             self.node.start()
+
+            # Subscribe to rated topics
+            self.node.subscribe("ARatedTopic", callback=self.print)
+            self.node.subscribe("ARatedCallbackTopic", callback=self.print_callback)
 
             while True:
                 time.sleep(1)
@@ -59,12 +56,15 @@ class ExampleNodeSubscriber:
                 # print("last_message", self.last_message)
                 # However, it is possible to get the last message from the shared memory using listen_once
                 print(self.node.listen_once("AStandaloneTopic"))
+                print(self.node.listen_once("ARatedTopic"))
+                print(self.node.listen_once("ARatedCallbackTopic"))
+
+                print(self.node.subscriptions)
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
         finally:
-            # self.node._memory.shm.close()
             self.node.stop()
             del self.node
 

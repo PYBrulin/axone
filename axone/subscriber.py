@@ -14,7 +14,8 @@ class Subscription:
         rate: float = 1.0,
     ) -> None:
         self._name: str = topic_name
-        self._rate: float = rate
+        self._request_rate: float = rate
+        self._topic_rate: float = None
         self._timestamp: float = 0
         self._last_timestamp: float = 0
 
@@ -48,8 +49,17 @@ class Subscription:
 
     @property
     def rate(self) -> float:
-        """The rate at which the topic is subscribed"""
-        return self._rate
+        """The rate at which the topic should be subscribed"""
+        return (
+            self._request_rate
+            if (self._request_rate is not None and self._topic_rate is None)
+            else (self._request_rate if (self._request_rate > self._topic_rate) else self._topic_rate)
+        )
+
+    @rate.setter
+    def rate(self, value: float) -> None:
+        # Change the request rate of the topic not the rate of the topic itself
+        self._request_rate = value
 
     @property
     def timestamp(self) -> float:
@@ -67,10 +77,12 @@ class Subscription:
 
     def call(self, topic_struct) -> None:
         for callback in self._callbacks:
-            callback(topic_struct)
+            if callable(callback):
+                callback(topic_struct)
 
     def subscribe(self) -> Any:
         """Get the latest message from the topic"""
+        logging.debug(f"Subscribing to {self._name}")
         self._last_timestamp = time.time()
 
         # Check that the memory is not empty
@@ -88,6 +100,6 @@ class Subscription:
         self._new_message = self._timestamp != self._last_timestamp
         self._last_timestamp = self._timestamp
 
-        self._rate = self._topic.rate_  # This comes from the topic itself
+        self._topic_rate = self._topic.rate_  # This comes from the topic itself
 
         # Note: Calling the callbacks is done in the main loop not here

@@ -7,6 +7,7 @@ from typing import NoReturn
 from axone.axone_struct import AxoneTopic
 from axone.custom_logger import setup_logger
 from axone.node import AxoneNode
+from axone.node_process import AxoneNodeProcess
 
 
 class ARatedTopic(AxoneTopic):
@@ -39,29 +40,25 @@ class ExampleNodePublisher:
     def __init__(self, use_process: bool = False) -> None:
         self.use_process = use_process
         # Register node
-        # if not self.use_process:
-        self.node = AxoneNode(
+        NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
+        self.node = NodeClass(
             name="example_publisher",
             centralized_memory_endpoint="ExampleNodeMemory",
         )
-        # else:
-        #     self.node = NodeProcess(
-        #         name="example_publisher",
-        #         memory_endpoint="ExampleNodeMemory",
-        #         memory_size=4096,
-        #     )
 
     def run(self) -> NoReturn:
         try:
+            # Note start the node before registering the publishers.
+            # This is a requirement for the AxoneNodeProcess variant.
+            # If using the standard AxoneNode variant, the node can be started
+            # after registering the publishers which is more flexible.
+            self.node.start()
+
             # Register a rated publisher
             self.node.publish_rate(ARatedTopic(), rate=3)
 
             # # Register a rated publisher from a callback function
             self.node.publish_rate(ARatedCallbackTopic(), rate=2)
-
-            # Note start the node after registering the publishers
-            # Which is a requirement for the NodeProcess variant
-            self.node.start()
 
             a_standalone_topic = AStandaloneTopic()
 
@@ -73,17 +70,12 @@ class ExampleNodePublisher:
 
                 counter += 1
 
-                # if not self.use_process:
-                #     print(f"Memory size : {self.node._memory.size}")
-
                 time.sleep(1)
+
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
         finally:
-            # if not self.use_process:
-            #     self.node._memory.shm.close()
-            # else:
             self.node.stop()
             del self.node
 

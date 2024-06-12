@@ -162,6 +162,10 @@ class AxoneStruct:
     # Not the best way to do this, but it works for now
     __blacklist_methods__ = ["encode", "decode", "update", "get_approximate_size", "list_instance_attributes", "get"]
 
+    # Create a logger for this class
+    __logger__ = logging.getLogger(__name__ + ".AxoneStruct")
+    __logger__.setLevel(logging.WARNING)
+
     def __init__(self) -> None:
         pass
 
@@ -309,7 +313,7 @@ class AxoneStruct:
         """
 
         # Number of attributes
-        logging.debug(f"Encoding {len(self)} attributes")
+        self.__logger__.debug(f"Encoding {len(self)} attributes")
 
         output = struct.pack('I', len(self.__attributes__))
 
@@ -322,29 +326,29 @@ class AxoneStruct:
             # Use the "native size" format to encode the string length since it is variable
             output += f'n{key_len}s'.encode()
             output += key_bytes
-            logging.debug(f"Encoding attribute name {key} of length {key_len}")
+            self.__logger__.debug(f"Encoding attribute name {key} of length {key_len}")
 
             # Attribute type
             if value is None:
                 output += b'x'
                 output += struct.pack('!x')
-                logging.debug(f"Encoding empty attribute {key}")
+                self.__logger__.debug(f"Encoding empty attribute {key}")
 
             elif isinstance(value, bool):
                 output += b'?'
                 output += struct.pack('?', value)
-                logging.debug(f"Encoding boolean {key} of value {value}")
+                self.__logger__.debug(f"Encoding boolean {key} of value {value}")
 
             elif isinstance(value, int):
                 output += b'i'
                 output += struct.pack('i', value)
-                logging.debug(f"Encoding int {key} of value {value}")
+                self.__logger__.debug(f"Encoding int {key} of value {value}")
 
             elif isinstance(value, float):
                 # TODO: Should we check between 'float' and 'double' to optimize the size?
                 output += b'd'
                 output += struct.pack('d', value)
-                logging.debug(f"Encoding double {key} of value {value}")
+                self.__logger__.debug(f"Encoding double {key} of value {value}")
 
             elif isinstance(value, str):
                 value_bytes = value.encode("utf-8")
@@ -354,7 +358,7 @@ class AxoneStruct:
                 # Use the "native size" format to encode the string length since it is variable
                 output += f'n{value_len}s'.encode()
                 output += value_bytes
-                logging.debug(f"Encoding string {value} of length {value_len}")
+                self.__logger__.debug(f"Encoding string {value} of length {value_len}")
 
             elif isinstance(value, AxoneStruct):
                 output += b"A"
@@ -392,11 +396,11 @@ class AxoneStruct:
                     break
             key_len = int(key_len[:-1])
             key = bytes(next(data_iter) for _ in range(key_len)).decode("utf-8")
-            logging.debug(f"Decoding attribute {key}")
+            self.__logger__.debug(f"Decoding attribute {key}")
 
             # Get next byte to determine the type of the attribute
             attr_type = chr(next(data_iter))
-            logging.debug(f"Attribute type {attr_type}")
+            self.__logger__.debug(f"Attribute type {attr_type}")
 
             if attr_type == 'n':  # if "native size"
                 # Get the next characters until a 's' or any alphabetical character is found
@@ -418,7 +422,7 @@ class AxoneStruct:
                 decoded = struct.unpack(attr_type, bytes(next(data_iter) for _ in range(struct.calcsize(attr_type))))
                 value = decoded[0] if len(decoded) == 1 else None  # Note: When value is None, the length of decoded is 0
 
-            logging.debug(f"Setting attribute {key} to {value if not attr_type == 'A' else type(value)}")
+            self.__logger__.debug(f"Setting attribute {key} to {value if not attr_type == 'A' else type(value)}")
             setattr(self, key, value)
 
 
