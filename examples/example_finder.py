@@ -1,12 +1,10 @@
 import argparse
-import logging  # noqa
 import time
 from typing import NoReturn
 
 from axone.custom_logger import setup_logger
 from axone.node import AxoneNode
-
-# from axone.node_process import NodeProcess
+from axone.node_process import AxoneNodeProcess
 
 
 class ExampleNodeFinder:
@@ -16,17 +14,11 @@ class ExampleNodeFinder:
 
     def __init__(self, use_process: bool = False) -> None:
         # Register node
-        # if not use_process:
-        self.node = AxoneNode(
+        NodeClass = AxoneNode if not use_process else AxoneNodeProcess
+        self.node = NodeClass(
             name="example_finder",
             centralized_memory_endpoint="ExampleNodeMemory",
         )
-        # else:
-        #     self.node = NodeProcess(
-        #         name="example_subscriber",
-        #         memory_endpoint="ExampleNodeMemory",
-        #         memory_size=4096,
-        #     )
 
     def run(self) -> NoReturn:
         try:
@@ -38,7 +30,7 @@ class ExampleNodeFinder:
             while True:
                 print("=" * 50)
                 node_list = self.node.list_nodes()
-                print("Node lists:", node_list)
+                print("Node lists:\n\t" + "\n\t".join(f"{k}: {v}" for k, v in node_list.items()))
                 # print(
                 #     "Searching for example_publisher:",
                 #     "Found" if self.node.find_node_by_name('example_publisher') is not None else "Not Found",
@@ -46,17 +38,17 @@ class ExampleNodeFinder:
                 # print("Services available:", self.node.is_node_advertising_services("example_publisher"))
 
                 for node_id, node_name in node_list.items():
+                    print()
                     print("ID:", node_id, "Node:", node_name)
-                    print("Configuration:", self.node.get_node_configuration(node_name))
+                    node_config = self.node.get_node_configuration(node_name)
+                    print("Configuration:", "\n\t".join(f"{k}: {v}" for k, v in node_config.items()))
                     print("Services available:", self.node.is_node_advertising_services(node_name))
-
                 time.sleep(1)
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
             pass
         finally:
-            # self.node._memory.shm.close()
             self.node.stop()
             del self.node
 

@@ -233,7 +233,8 @@ class AxoneNode:
         return self._is_node_advertising_services(name)
 
     def _is_node_advertising_services(self, name: str) -> bool:
-        return self._list_node_services(name) is not None
+        services = self._list_node_services(name)
+        return services is not None and services != ""
 
     # def _is_service_advertised(self, node_id: str, service: str) -> bool:
     #     """Check if an service is advertised by a node."""

@@ -3,13 +3,14 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 
-from axone.node import Node
+from axone.node import AxoneNode
 
 
 class CmdLine:
     def __init__(self, **kwargs) -> None:
-        self.node = Node(
+        self.node = AxoneNode(
             **kwargs,
         )
         self.node.start()
@@ -39,14 +40,10 @@ class CmdLine:
                 },
                 "_help": "Node configuration management",
             },
-            "memory": {
-                "_cb": self.memory,
-                "_help": "Display the memory content",
-            },
-            "watch": {
-                "_cb": self.watch,
-                "_help": "watch the memory content in real-time",
-            },
+            # "watch": {
+            #     "_cb": self.watch,
+            #     "_help": "watch the memory content in real-time",
+            # },
             "rate": {
                 "_cb": self.rate,
                 "_help": "Display the highest rate",
@@ -143,17 +140,6 @@ class CmdLine:
     def quit(self, *args) -> None:
         exit(0)
 
-    def memory(self, *args) -> None:
-        self.db = dict(self.node._memory)
-        print(
-            json.dumps(
-                self.db,
-                sort_keys=True,
-                indent=4,
-                separators=(", ", ": "),
-            )
-        )
-
     def rate(self, *args) -> None:
         print(f"Highest rate : {self._highest_rate}")
 
@@ -161,10 +147,9 @@ class CmdLine:
         self.node.restart()
 
     def config_show(self, *args) -> None:
-        print(f"Name : {self.node.name}")
-        print(f"Memory endpoint : {self.node.memory_endpoint}")
-        print(f"Memory size : {self.node.memory_size}")
-        print(f"Memory block : {self.node._memory._memory_block}")
+        print(f"Name            : {self.node.name}")
+        print(f"Memory endpoint : {self.node.centralized_node.endpoint}")
+        print(f"Memory size     : {self.node.centralized_node.size}")
 
     def config_set(self, *args) -> None:
         args = args[0]
@@ -180,65 +165,61 @@ class CmdLine:
                 required_restart = True
                 self.node.name = args[1]
         elif args[0] == "endpoint":
-            if args[1] != self.node.memory_endpoint:
+            if args[1] != self.node.centralized_node.endpoint:
                 required_restart = True
-                self.node.memory_endpoint = args[1]
+                self.node.centralized_node.endpoint = args[1]
         elif args[0] == "size":
-            if args[1] != self.node.memory_size:
+            if args[1] != self.node.centralized_node.size:
                 required_restart = True
-                self.node.memory_size = int(args[1])
+                self.node.centralized_node.size = int(args[1])
         else:
             print(f"Unknown argument '{args[0]}'")
             return
 
         if required_restart:
-            self.node.restart()
+            self.node.stop()
+            self.node.start()
 
     # region Node
     def node_info(self, *args) -> None:
         args = args[0]
+        node_name = args[0]
 
-        if len(args) != 0:
-            node = self.node._memory.get("__nds", {})[self.node.node_id]
-            _nodes = self.node.find_node_by_name(args[0])
-            if _nodes is None:
-                print(f"Unknown node '{args[0]}'")
-                return
-            node = self.node._memory.get("__nds", {})[_nodes]
-        else:
+        if len(args) == 0:
             print("Not enough arguments to call node info command. Usage: node info <node_name>")
             return
 
-        for key, value in node.items():
-            if isinstance(value, dict):
-                print(f"{key}" + "─" * (20 - len(key) + 1) + "┐")
-                for i, (subkey, subvalue) in enumerate(value.items()):
-                    print(" │ " if i < len(value) - 1 else " └ ", end="")
-                    print(f"{subkey:17s} : {subvalue}")
-            else:
-                if key.startswith("__"):
-                    if key == "__t":
-                        key = "Last timestamp"
-                    if key == "__n":
-                        key = "Node name"
-                print(f"{key:20s} : {value}")
+        if self.node.find_node_by_name(node_name) is None:
+            print("Node not found")
+            return
+
+        node_config = self.node.get_node_configuration(node_name)
+
+        for key, value in node_config.items():
+            print(f"{key:30s} : {value}")
 
     def node_list(self, *args) -> None:
         """Display the list of nodes"""
-        self.db = self.node._memory.get("__nds", {})
-        if len(self.db) == 0:
-            print("No nodes")
+        node_list = self.node.list_nodes()
+        if len(node_list) == 0:
+            print("No nodes connected")
             return
 
-        print(f"{'Nodes':^30s} │ {'Params':^10s} │ {'Services':^10s}")
-        print("─" * 30 + "─┼─" + "─" * 10 + "─┼─" + "─" * 10)
-        for node in self.db.keys():
+        print(f"{'IDs':^10s} │ {'Nodes':^30s} │ {'Last Seen':^30s} │ {'Services':^30s}")
+        print("─" * 10 + "─┼─" + "─" * 30 + "─┼─" + "─" * 30 + "─┼─" + "─" * 30)
+        for node_id, node_name in node_list.items():
+            node_config = self.node.get_node_configuration(node_name)
             print(
-                f"{self.db[node].get('__n', node):^30s}"
+                f"{node_id:^10s}" + " │ "
+                f"{node_name:^30s}"
                 + " │ "
-                + (f"{len(self.db[node].get('__p', {})):^10d}" if self.db[node].get('__p', {}) else f"{'':^10s}")
+                + (
+                    f"{str(datetime.fromtimestamp(node_config.get('timestamp', 0))):^30s}"
+                    if 'timestamp' in node_config
+                    else f"{'':^30s}"
+                )
                 + " │ "
-                + (f"{len(self.db[node].get('__s', {})):^10d}" if self.db[node].get('__s', {}) else f"{'':^10s}")
+                + (f"{node_config.get('services', 0)}" if 'services' in node_config else f"{'':^30s}")
             )
 
     # endregion
@@ -297,15 +278,13 @@ class CmdLine:
             print("Missing topic name")
             return
 
-        if not self.node._memory.get(topic_name, {}):
-            print(f"Unknown topic '{topic_name}'")
-            return
-
         try:
             # Implement a simple subscription to a topic
             # It does not rely on the node's subscription mechanism
             content = ""
             print("Press Ctrl+C to exit")
+
+            last_timestamp = 0
             while True:
                 size = len(content.splitlines())
                 if size > 0:
@@ -315,33 +294,28 @@ class CmdLine:
                     print("\033[J", end="")
                     # I love ANSI escape codes :)
 
-                topic = self.node._memory.get(topic_name, {})
-                if topic:
-                    content = json.dumps(
-                        topic,
-                        sort_keys=True,
-                        indent=4,
-                        separators=(", ", ": "),
-                    )
-                    print(content)
+                topic = self.node.listen_once(topic_name)
+                if topic is not None:
 
-                    timestamp = topic.get("__timestamp", 0)
-                    rate = topic.get("__r", -1)
+                    if topic.timestamp_ != last_timestamp:
+                        last_timestamp = topic.timestamp_
+                        content = str(topic)
+                        print(content)
 
                     # Sleep until the next message
-                    if rate > 0:
+                    if topic.rate_ > 0:
                         # Try to align the subscription with the publishing rate as much as possible
                         time.sleep(
                             max(
                                 0,
-                                1 / float(rate) - max(0, time.time() - timestamp),
+                                1 / float(topic.rate_) - max(0, time.time() - topic.timestamp_),
                             )
                         )
                     else:
-                        # If rate is not specified, then sleep for 0.1 second
-                        time.sleep(0.1)
+                        # If rate is not specified, then sleep for 1.0 second
+                        time.sleep(1.0)
                 else:
-                    print(f"Topic '{topic_name}' has been deleted")
+                    print(f"Topic '{topic_name}' does not exist or has been deleted")
                     break
         except KeyboardInterrupt:
             print("Interrupted")
@@ -422,62 +396,62 @@ class CmdLine:
 
     # endregion
 
-    def watch(self, *args) -> None:
-        """Watch the memory content in real-time"""
-        print("Press Ctrl+C to exit")
-        try:
-            # Implement a simple subscription to a topic
-            # It does not rely on the node's subscription mechanism
-            content = ""
-            while True:
-                size = len(content.splitlines())
-                if size > 0:
-                    # Move the cursor to the beginning of the content
-                    print(f"\033[{size}A", end="")
-                    # Clear the remaining lines
-                    print("\033[J", end="")
-                    # I love ANSI escape codes :)
+    # def watch(self, *args) -> None:
+    #     """Watch the memory content in real-time"""
+    #     print("Press Ctrl+C to exit")
+    #     try:
+    #         # Implement a simple subscription to a topic
+    #         # It does not rely on the node's subscription mechanism
+    #         content = ""
+    #         while True:
+    #             size = len(content.splitlines())
+    #             if size > 0:
+    #                 # Move the cursor to the beginning of the content
+    #                 print(f"\033[{size}A", end="")
+    #                 # Clear the remaining lines
+    #                 print("\033[J", end="")
+    #                 # I love ANSI escape codes :)
 
-                self.db = dict(self.node._memory)
-                if self.db:
-                    content = json.dumps(
-                        self.db,
-                        sort_keys=True,
-                        indent=4,
-                        separators=(", ", ": "),
-                    )
-                    print(content)
+    #             self.db = dict(self.node._memory)
+    #             if self.db:
+    #                 content = json.dumps(
+    #                     self.db,
+    #                     sort_keys=True,
+    #                     indent=4,
+    #                     separators=(", ", ": "),
+    #                 )
+    #                 print(content)
 
-                    self._highest_rate = 1
-                    for topic in self.db.keys():
-                        if isinstance(self.db[topic], dict):
-                            rate = self.db[topic].get("__r", 0)
-                            if rate > self._highest_rate:
-                                self._highest_rate = rate
+    #                 self._highest_rate = 1
+    #                 for topic in self.db.keys():
+    #                     if isinstance(self.db[topic], dict):
+    #                         rate = self.db[topic].get("__r", 0)
+    #                         if rate > self._highest_rate:
+    #                             self._highest_rate = rate
 
-                    # Sleep until the next message
-                    time.sleep(min(1, 1 / float(self._highest_rate)))
-                else:
-                    break
-        except KeyboardInterrupt:
-            print("Interrupted")
-            return
-        # except Exception as e:
-        #     print(e)
-        #     return
+    #                 # Sleep until the next message
+    #                 time.sleep(min(1, 1 / float(self._highest_rate)))
+    #             else:
+    #                 break
+    #     except KeyboardInterrupt:
+    #         print("Interrupted")
+    #         return
+    #     # except Exception as e:
+    #     #     print(e)
+    #     #     return
 
     def main(self) -> None:
         try:
             while True:
-                # Read the memory content
-                self.db = dict(self.node._memory)
+                # # Read the memory content
+                # self.db = dict(self.node._memory)
 
-                self._highest_rate = 1
-                for topic in self.db.keys():
-                    if isinstance(self.db[topic], dict):
-                        rate = self.db[topic].get("__r", 0)
-                        if rate > self._highest_rate:
-                            self._highest_rate = rate
+                # self._highest_rate = 1
+                # for topic in self.db.keys():
+                #     if isinstance(self.db[topic], dict):
+                #         rate = self.db[topic].get("__r", 0)
+                #         if rate > self._highest_rate:
+                #             self._highest_rate = rate
 
                 # Input command
                 command = input(f"(axone:{self.node.name})> ")
@@ -506,7 +480,7 @@ class CmdLine:
             print("Exiting...")
             exit(0)
         finally:
-            self.node._memory.shm.close()
+            self.node.stop()
             del self.node
 
 
@@ -524,7 +498,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '-e',
-        '--memory_endpoint',
+        '--centralized_memory_endpoint',
         type=str,
         default='ExampleNodeMemory',
         help='memory endpoint name',
