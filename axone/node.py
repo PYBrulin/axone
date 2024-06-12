@@ -131,7 +131,7 @@ class AxoneNode:
         self.centralized_node = self.CentralizedNode(self.name, self.node_id, **kwargs)
         self.centralized_node.advertise()
 
-        # services parameters
+        # Services parameters
         self.service_server = None
         self._services = kwargs.get("services", None)
         # self._hide_services = kwargs.get("hide_services", False)
@@ -195,7 +195,7 @@ class AxoneNode:
         return self._get_node_configuration(name)
 
     def _get_node_configuration(self, name: str):
-        node = self.find_node_by_name(name)
+        node = self._find_node_by_name(name)
         if node is None:
             logging.debug(f"Node {name} does not exist.")
             return None
@@ -211,7 +211,8 @@ class AxoneNode:
         return self._list_node_services(name)
 
     def _list_node_services(self, name: str):
-        node_struct = self.get_node_configuration(name)
+        print("_list_node_services")
+        node_struct = self._get_node_configuration(name)
         if node_struct is None:
             return None
         return node_struct.get("services", None)
@@ -221,7 +222,7 @@ class AxoneNode:
         return self._get_node_services_server_port(name)
 
     def _get_node_services_server_port(self, name: str):
-        node_struct = self.get_node_configuration(name)
+        node_struct = self._get_node_configuration(name)
         print(name, node_struct)
         if node_struct is None:
             return None
@@ -232,7 +233,7 @@ class AxoneNode:
         return self._is_node_advertising_services(name)
 
     def _is_node_advertising_services(self, name: str) -> bool:
-        return self.list_node_services(name) is not None
+        return self._list_node_services(name) is not None
 
     # def _is_service_advertised(self, node_id: str, service: str) -> bool:
     #     """Check if an service is advertised by a node."""
@@ -417,7 +418,7 @@ class AxoneNode:
             self.logger.error("Service name must be specified.")
             return
 
-        services_advertised = self.list_node_services(dest_node_name)
+        services_advertised = self._list_node_services(dest_node_name)
         if services_advertised is None:
             self.logger.error(f"Node {dest_node_name} is not advertising any services.")
             return
@@ -431,7 +432,7 @@ class AxoneNode:
                 + "be hiding its services. The call will be made anyway."
             )
 
-        server_port = self.get_node_services_server_port(dest_node_name)
+        server_port = self._get_node_services_server_port(dest_node_name)
 
         if sys.platform != 'win32':
             family = socket.AF_UNIX

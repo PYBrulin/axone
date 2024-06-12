@@ -42,34 +42,14 @@ class AxoneNodeProcess(AxoneNode):
         self.node_id = generate_uuid(self.name)  # Generate a unique node id
         self.kwargs = kwargs
 
+        # Services parameters
+        self._services = kwargs.get("services", None)
+
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
         self._subscriptions: Dict[str, Subscription] = {}
 
-    def start(self):
-        """Start the node."""
-        # Re-initialize the shared logger
-        global_log_level = logging.getLogger().getEffectiveLevel()
-        multiprocessing.log_to_stderr(global_log_level)
-        self.logger = multiprocessing.get_logger()
-        formatter = CustomFormatter()
-        for handler in self.logger.handlers:
-            handler.setFormatter(formatter)
-
-        # Initialize the communication pipes
-        self._parent_conn, self._child_conn = multiprocessing.Pipe()
-
-        # Initialize a Process to run the node
-        self._executor = multiprocessing.Process(
-            target=self.run,
-            args=(
-                self.name,
-                self._child_conn,
-            ),
-            kwargs=self.kwargs,
-            name="NodeProcess",
-        )
-        self._executor.start()
+    # region Process functions
 
     def _call_function(self, function_name, *args, **kwargs) -> Any:
         """Call a function on the node."""
@@ -91,92 +71,39 @@ class AxoneNodeProcess(AxoneNode):
             self.logger.error(f"Cannot call function {function_name} until the node has started.")
             exit(1)
 
-    def run(self, name, conn, **kwargs) -> None:
-        """Run the node."""
-        # Initialize the node
+    # endregion Process functions
 
-        # Node parameters (those are accessible from the process)
-        self.name = name
-        self.node_id = generate_uuid(self.name)  # Generate a unique node id
+    # region Common functions
 
-        # Lists of subscribers
-        # Note: We indeed have to initialize the subscribers here a second times
-        # because the previous initialization is not accessible from the process.
-        # Due to this limitation, we need to periodically check if there are new
-        # subscribers to add.
-        self._subscriptions: Dict[str, Subscription] = {}
+    def list_nodes(self) -> list[str]:
+        """
+        List all the attributes in the centralized memory.
+        This is really simple as the centralized memory only contains the nodes ID and names.
+        """
+        return self._call_function("_list_nodes")
 
-        # Check for required parameters
-        if self.name == "":
-            raise ValueError("Node name cannot be empty.")
+    def find_node_by_name(self, name: str) -> Optional[str]:
+        """Search a node by name"""
+        node = self._call_function("_find_node_by_name", name=name)
+        return node
 
-        print("=" * 50)
-        print(f"Node name: {self.name}")
-        print(f"Node id: {self.node_id}")
-        print(f"Node parameters: {kwargs}")
-        print("=" * 50)
+    def get_node_configuration(self, name: str) -> Any:
+        """Get the configuration of a node."""
+        return self._call_function("_get_node_configuration", name=name)
 
-        # Create the centralized node
-        self.centralized_node = self.CentralizedNode(self.name, self.node_id, **kwargs)
-        self.centralized_node.advertise()
+    def list_node_services(self, name: str) -> Any:
+        """List the services available for a node."""
+        return self._call_function("_list_node_services", name=name)
 
-        # services parameters
-        self.service_server = None
-        self._services = kwargs.get("services", None)
-        # self._hide_services = kwargs.get("hide_services", False)
-        self.setup_service_server()
+    def get_node_services_server_port(self, name: str) -> Any:
+        """List the services available for a node."""
+        return self._call_function("_get_node_services_server_port", name=name)
 
-        # Create the "self" node
-        self.self_node = self.SelfNode(
-            name=self.name,
-            node_id=self.node_id,
-            services_names=self.service_server.services_keys if self.service_server is not None else [],
-            services_server_port=self.service_server.server_port if self.service_server is not None else 0,
-            **kwargs,
-        )
-        self.self_node.advertise()
+    def is_node_advertising_services(self, name: str) -> bool:
+        """Check if a node is advertising services."""
+        return self._call_function("_is_node_advertising_services", name=name)
 
-        self._last_federation_time = 0  # The time at which the memory was last federated.
-
-        # Run the server process
-        self._server_process(conn)
-
-    def _server_process(self, conn) -> None:
-        while True:
-            # Check if there's a task to be executed
-            if conn.poll():
-                task = conn.recv()
-                function_name, args, kwargs = task
-                # Map the function name to the actual function
-                # Needed to avoid pickling the function itself
-                # which is forbidden
-                try:
-                    function = getattr(self, f'{function_name}')
-                    result = function(*args, **kwargs)
-                    self.logger.debug(f"Result: {result}")
-                    conn.send(result)
-                except AttributeError:
-                    self.logger.error(f"Function {function_name} possibly does not exist.", exc_info=True)
-            else:
-                # Handle the case where there's nothing to receive
-                pass
-
-            self._server_exec()
-
-    def stop(self) -> None:
-        """Stop the node."""
-
-        # Close the pipes
-        self._parent_conn.close()
-        self._child_conn.close()
-
-        # Terminate the process
-        self._executor.terminate()
-        self._executor.join()
-
-    def join(self) -> None:
-        """Join the node."""
-        self._executor.join()
+    # endregion Common functions
 
     # region Publisher functions
     @timeit_if_debug
@@ -281,60 +208,145 @@ class AxoneNodeProcess(AxoneNode):
 
     # endregion Subscriber functions
 
-    # region Services - Request/Response functions
+    # region Services functions
     def call_service(
         self,
         dest_node_id: Optional[str] = None,
         dest_node_name: Optional[str] = None,
-        service: Optional[str] = None,
-        answer: Optional[str] = None,
-        **kwargs: Any,
+        service_name: Optional[str] = None,
+        # answer: Optional[str] = None,
+        **kwargs,
     ) -> Any:
         """Call a service."""
         return self._call_function(
             "_call_service",
             dest_node_id=dest_node_id,
             dest_node_name=dest_node_name,
-            service=service,
-            answer=answer,
+            service_name=service_name,
+            # answer=answer,
             **kwargs,
         )
 
-    # endregion
-
-    def list_nodes(self) -> list[str]:
-        """
-        List all the attributes in the centralized memory.
-        This is really simple as the centralized memory only contains the nodes ID and names.
-        """
-        return self._call_function("_list_nodes")
-
-    def find_node_by_name(self, name: str) -> Optional[str]:
-        """Search a node by name"""
-        node = self._call_function("_find_nodes_by_name", name=name)
-        return node
-
-    def get_node_configuration(self, name: str) -> Any:
-        """Get the configuration of a node."""
-        return self._call_function("_get_node_configuration", name=name)
-
-    def list_node_services(self, name: str) -> Any:
-        """List the services available for a node."""
-        return self._call_function("_list_node_services", name=name)
-
-    def get_node_services_server_port(self, name: str) -> Any:
-        """List the services available for a node."""
-        return self._call_function("_get_node_services_server_port", name=name)
-
-    def is_node_advertising_services(self, name: str) -> bool:
-        """Check if a node is advertising services."""
-        return self._call_function("_is_node_advertising_services", name=name)
+    # endregion Services functions
 
     # region Parameters: Parameter Server functions
-    def update_parameters(self, parameters: Dict[str, Any]):
-        return self._call_function("_update_parameters", parameters=parameters)
-
-    def get_parameters(self, node_id: str) -> Dict[str, Any]:
-        return self.call_service("_get_parameters", node_id=node_id)
-
+    # def update_parameters(self, parameters: Dict[str, Any]):
+    #     return self._call_function("_update_parameters", parameters=parameters)
+    # def get_parameters(self, node_id: str) -> Dict[str, Any]:
+    #     return self.call_service("_get_parameters", node_id=node_id)
     # endregion
+
+    def start(self):
+        """Start the node."""
+        # Re-initialize the shared logger
+        global_log_level = logging.getLogger().getEffectiveLevel()
+        multiprocessing.log_to_stderr(global_log_level)
+        self.logger = multiprocessing.get_logger()
+        formatter = CustomFormatter()
+        for handler in self.logger.handlers:
+            handler.setFormatter(formatter)
+
+        # Initialize the communication pipes
+        self._parent_conn, self._child_conn = multiprocessing.Pipe()
+
+        # Initialize a Process to run the node
+        self._executor = multiprocessing.Process(
+            target=self.run,
+            args=(
+                self.name,
+                self._child_conn,
+            ),
+            kwargs=self.kwargs,
+            name="NodeProcess",
+        )
+        self._executor.start()
+
+        if self.services is not None:
+            # Note: The services server is not contained in the node process
+            # TODO: Is there any point in having the services server in the node process?
+            # TODO: All callbacks are external to the node process.
+            self.setup_service_server()
+            self.service_server.start()
+
+    def run(self, name, conn, **kwargs) -> None:
+        """Run the node."""
+        # Initialize the node
+
+        # Node parameters (those are accessible from the process)
+        self.name = name
+        self.node_id = generate_uuid(self.name)  # Generate a unique node id
+
+        # Lists of subscribers
+        # Note: We indeed have to initialize the subscribers here a second times
+        # because the previous initialization is not accessible from the process.
+        # Due to this limitation, we need to periodically check if there are new
+        # subscribers to add.
+        self._subscriptions: Dict[str, Subscription] = {}
+
+        # Check for required parameters
+        if self.name == "":
+            raise ValueError("Node name cannot be empty.")
+
+        logging.info(f"Starting node process for : {self.name}")
+
+        # Create the centralized node
+        self.centralized_node = self.CentralizedNode(self.name, self.node_id, **kwargs)
+        self.centralized_node.advertise()
+
+        # services parameters
+        self.service_server = None
+        self._services = kwargs.get("services", None)
+        # self._hide_services = kwargs.get("hide_services", False)
+        self.setup_service_server()
+
+        # Create the "self" node
+        self.self_node = self.SelfNode(
+            name=self.name,
+            node_id=self.node_id,
+            services_names=self.service_server.services_keys if self.service_server is not None else [],
+            services_server_port=self.service_server.server_port if self.service_server is not None else 0,
+            **kwargs,
+        )
+        self.self_node.advertise()
+
+        self._last_federation_time = 0  # The time at which the memory was last federated.
+
+        # Run the server process
+        self._server_process(conn)
+
+    def stop(self) -> None:
+        """Stop the node."""
+
+        # Close the pipes
+        self._parent_conn.close()
+        self._child_conn.close()
+
+        # Terminate the process
+        self._executor.terminate()
+        self._executor.join()
+
+    def join(self) -> None:
+        """Join the node."""
+        self._executor.join()
+
+    def _server_process(self, conn) -> None:
+        while True:
+            # Check if there's a task to be executed
+            if conn.poll():
+                task = conn.recv()
+                function_name, args, kwargs = task
+                # Map the function name to the actual function
+                # Needed to avoid pickling the function itself
+                # which is forbidden
+                try:
+                    function = getattr(self, f'{function_name}')
+                    result = function(*args, **kwargs)
+                    self.logger.debug(f"Result: {result}")
+                    conn.send(result)
+                except AttributeError:
+                    self.logger.error(f"Function {function_name} possibly does not exist.", exc_info=True)
+            else:
+                # Handle the case where there's nothing to receive
+                pass
+
+            self._server_exec()

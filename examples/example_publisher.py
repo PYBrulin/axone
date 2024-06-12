@@ -3,7 +3,6 @@ import logging
 import time
 from typing import NoReturn
 
-# from axone.node_process import NodeProcess
 from axone.axone_struct import AxoneTopic
 from axone.custom_logger import setup_logger
 from axone.node import AxoneNode

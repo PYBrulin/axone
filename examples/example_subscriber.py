@@ -1,5 +1,4 @@
 import argparse
-import logging  # noqa
 import time
 from typing import NoReturn
 
@@ -7,8 +6,6 @@ from axone.axone_struct import AxoneStruct
 from axone.custom_logger import setup_logger
 from axone.node import AxoneNode
 from axone.node_process import AxoneNodeProcess
-
-# from axone.node_process import NodeProcess
 
 
 class ExampleNodeSubscriber:

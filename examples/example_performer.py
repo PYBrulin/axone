@@ -1,10 +1,10 @@
 import argparse
-import logging  # noqa
 import time
 from typing import Dict, NoReturn
 
 from axone.custom_logger import setup_logger
 from axone.node import AxoneNode
+from axone.node_process import AxoneNodeProcess
 
 
 class ExampleNodePerformer:
@@ -40,23 +40,14 @@ class ExampleNodePerformer:
         }
 
         # Register node
-        # if not self.use_process:
-        self.node = AxoneNode(
+        NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
+        self.node = NodeClass(
             name="example_performer",
             centralized_memory_endpoint="ExampleNodeMemory",
             parameters=self.parameters,
             services=services,
             # hide_services=True,
         )
-        # else:
-        #     self.node = NodeProcess(
-        #         name="example_performer",
-        #         memory_endpoint="ExampleNodeMemory",
-        #         memory_size=4096,
-        #         parameters=self.parameters,
-        #         services=services,
-        #         # hide_services=True,
-        #     )
 
     # region service callbacks
     def print(self, message: str) -> None:
@@ -103,9 +94,6 @@ class ExampleNodePerformer:
             print("KeyboardInterrupt")
             pass
         finally:
-            # if not self.use_process:
-            #     self.node._memory.shm.close()
-            # else:
             self.node.stop()
             del self.node
 

@@ -1,13 +1,10 @@
 import argparse
-import logging  # noqa
-import math  # noqa
 import time
 from typing import NoReturn
 
 from axone.custom_logger import setup_logger
 from axone.node import AxoneNode
-
-# from axone.node_process import NodeProcess
+from axone.node_process import AxoneNodeProcess
 
 
 class ExampleNodeActuator:
@@ -17,7 +14,7 @@ class ExampleNodeActuator:
     """
 
     def __init__(self, use_process: bool = False) -> None:
-        # self.use_process = use_process
+        self.use_process = use_process
         # Class services/callbacks
         # services = {
         #     self.move_response: {
@@ -28,19 +25,11 @@ class ExampleNodeActuator:
         # }
 
         # Register node
-        # if not self.use_process:
-        self.node = AxoneNode(
+        NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
+        self.node = NodeClass(
             name="example_actuator",
             centralized_memory_endpoint="ExampleNodeMemory",
-            # services=services,
         )
-        # else:
-        #     self.node = NodeProcess(
-        #         name="example_actuator",
-        #         memory_endpoint="ExampleNodeMemory",
-        #         memory_size=4096,
-        #         services=services,
-        #     )
 
     def move_response(
         self,
@@ -64,15 +53,19 @@ class ExampleNodeActuator:
                     print("Target node not found")
                 else:  # Found the target node
                     # List the available services of the target node
-                    print(f"Available services of {target_node}: {self.node.list_node_services(target_node)}")
-                    # Call the service "print" of the target node
-                    print("Calling service print")
-                    self.node.call_service(
-                        dest_node_name=target_node,
-                        service_name="print",
-                        message="Hello from example_actuator",
-                    )
-                    print("Called service print")
+                    available_services = self.node.list_node_services(target_node)
+                    print(f"Available services of {target_node}: {available_services}")
+
+                    # Call the service "print" of the target node if available
+                    if "print" in available_services:
+                        print("Service print is available")
+                        print("Calling service print")
+                        self.node.call_service(
+                            dest_node_name=target_node,
+                            service_name="print",
+                            message="Hello from example_actuator",
+                        )
+                        print("Called service print")
 
                     # Call the service "move" of the target node
                     # if not self.use_process:
@@ -101,9 +94,6 @@ class ExampleNodeActuator:
             print("KeyboardInterrupt")
             pass
         finally:
-            # if not self.use_process:
-            #     self.node._memory.shm.close()
-            # else:
             self.node.stop()
             del self.node
 
