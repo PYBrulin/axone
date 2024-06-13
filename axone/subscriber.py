@@ -4,7 +4,7 @@ from multiprocessing.shared_memory import SharedMemory
 from typing import Any, Callable, List
 
 from axone.axone_struct import AxoneStruct
-from axone.utils import generate_uuid
+from axone.utils import generate_uuid, timeit_if_debug
 
 
 class Subscription:
@@ -80,6 +80,7 @@ class Subscription:
             if callable(callback):
                 callback(topic_struct)
 
+    @timeit_if_debug
     def subscribe(self) -> Any:
         """Get the latest message from the topic"""
         logging.debug(f"Subscribing to {self._name}")
@@ -103,3 +104,13 @@ class Subscription:
         self._topic_rate = self._topic.rate_  # This comes from the topic itself
 
         # Note: Calling the callbacks is done in the main loop not here
+
+    def stop(self) -> None:
+        if self._memory is not None:
+            try:
+                self._memory.close()
+            except FileNotFoundError:
+                logging.error(f"Shared memory {self._uuid} not found")
+        else:
+            logging.debug(f"Shared memory {self._uuid} is None")
+        logging.debug(f"Subscription {self._name} deleted")

@@ -4,7 +4,7 @@ from multiprocessing.shared_memory import SharedMemory
 from typing import Optional
 
 from axone.axone_struct import AxoneStruct
-from axone.utils import generate_uuid
+from axone.utils import generate_uuid, timeit_if_debug
 
 
 class Publisher:
@@ -33,12 +33,14 @@ class Publisher:
         self._topic.timestamp_ = time.time()
 
         # Create a shared memory for the topic
+        self.has_created_shared_memory = False
         try:
             self._memory = SharedMemory(
                 name=self._uuid,
                 create=True,
                 size=topic.get_approximate_size(),
             )
+            self.has_created_shared_memory = True
         except FileExistsError:
             logging.warning(f"Shared memory {self._uuid} already exists")
             # Try to open the shared memory if it already exists
@@ -66,6 +68,7 @@ class Publisher:
         """The timestamp of the last update of the topic"""
         return self._last_update
 
+    @timeit_if_debug
     def publish(self, topic: AxoneStruct = None) -> None:
         """Update the topic"""
         if topic is not None:
@@ -81,6 +84,13 @@ class Publisher:
         logging.debug(f"Topic {self._topic}")
         encoded = self._topic.encode()
         self._memory.buf[: len(encoded)] = bytes(encoded)
+
+    def stop(self) -> None:
+        if self.has_created_shared_memory:
+            self._memory.unlink()
+        else:
+            self._memory.close()
+        logging.debug(f"Publisher {self._name} stopped")
 
 
 if __name__ == "__main__":

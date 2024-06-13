@@ -51,6 +51,7 @@ class AxoneNodeProcess(AxoneNode):
 
     # region Process functions
 
+    @timeit_if_debug
     def _call_function(self, function_name, *args, **kwargs) -> Any:
         """Call a function on the node."""
         try:
@@ -61,6 +62,7 @@ class AxoneNodeProcess(AxoneNode):
             self.logger.error(f"Cannot call function {function_name} until the node has started.")
             exit(1)
 
+    @timeit_if_debug
     def _call_function_async(self, function_name, *args, **kwargs) -> None:
         """Call a function on the node and exit without waiting for a return."""
         try:

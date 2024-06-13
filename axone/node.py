@@ -507,6 +507,21 @@ class AxoneNode:
         if self.service_server is not None:
             self.service_server.stop()
 
+        # Wait for the server to stop
+        self._executor.shutdown(wait=True)
+
+        # Unregister the node from the centralized memory
+        self.centralized_node.memory[self.node_id] = None
+
+        # Unregister the node from the self memory
+        self.self_node.memory.cleanup()
+
+        # Cleanup the publishers and subscribers of this node
+        for publisher in self.publishers.values():
+            publisher.stop()
+        for subscription in self.subscriptions.values():
+            subscription.stop()
+
     def _server(self) -> None:
         """
         Periodic server functions
