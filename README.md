@@ -8,7 +8,7 @@ The package provide basic functionalities similar to ROS, such as:
 
 - Publisher/Subscriber: A node can publish data to a topic, and other nodes can subscribe to this topic to receive the data.
 - Service/Client: A node can provide a service, and other nodes can call this service.
-- Parameter server: A node can store parameters on the parameter server, and other nodes can retrieve them.
+- (WIP) Parameter server: A node can store parameters on the parameter server, and other nodes can retrieve them.
 
 ## Installation
 
@@ -26,26 +26,24 @@ pip install axone-[latest-version]-py3-none-any.whl
 
 ## Hybrid Federated Architecture
 
-Axone nodes are designed to be run on a local system and on common **centralized memory space**. However, there is no central entity that is responsible to maintain either the main data structure, time or the distribution/communication of data between nodes (except maybe the OS itself if you consider it as a central entity).
+Axone nodes are designed to be run on a local system and interact on both a **decentralized** and **centralized** manner through shared memories.
 
-By design nodes are responsible to maintain the main data structure without designating a main node. This is a design choice to keep the framework simple and to avoid the complexity of a distributed system. However, this design choice has some drawbacks. For example, if a node is killed, the data structure is not updated and the other nodes will not be aware of the change. To solve this issue, a **federation** mechanism is implemented.
+All nodes are connected to a centralized shared memory space, which is used to inform all nodes of the existence of other nodes. This shared memory space is used to store the list of nodes and their respective shared memory endpoints. The shared memory space is created by the first node that uses it, and it is accessible by all nodes that use the same common endpoint address.
 
-To achieve federation, each node is able to validate the data structure periodically and to update the main structure if needed. Timestamp are the main mechanism to validate the data structure. Each node is responsible to update its own timestamp at a fixed rate of 1 Hz, otherwise the node is considered dead. Each node is also responsible to update the timestamp of the data structure it is responsible for. If a node detect that the timestamp of any data structure (topics, services, or even other node declarations) is older than a certain threshold, it will update the data structure appropriately, mostly by removing the outdated data structure. This mechanism is implemented in the `Node` class and is transparent to the user.
-
-A requirement to use the federation mechanism is that the all nodes use the same package version. As the package is currently in development, this requirement is implied is the package is user-installed. However, if the package is installed in a virtual environment, data structure may break depending on the version of the package used.
+Each node has its own shared memory space, which is used to specify the topics it publishes, the services it provides and its parameters. This shared memory space is created by the node itself and is accessible by all other nodes through standard API calls.
 
 ```mermaid
 ---
-title: Hybrid Federated Architecture
+title: Architecture
 ---
 flowchart LR
     central_memory[(Centralized shared\nmemory space)]
-    node_1[Node 1]
-    node_2[Node 2]
-    node_3[Node 3]
-    node_4[Node 4]
-    node_5[Node 5]
-    node_6[Node 6]
+    self_1[(Self 1)] o--o node_1[Node 1]
+    self_2[(Self 2)] o--o node_2[Node 2]
+    self_3[(Self 3)] o--o node_3[Node 3]
+    node_4[Node 4] o--o self_4[(Self 4)]
+    node_5[Node 5] o--o self_5[(Self 5)]
+    node_6[Node 6] o--o self_6[(Self 6)]
     node_1 & node_2 & node_3 o--o central_memory o--o node_4 & node_5 & node_6
 ```
 
@@ -57,24 +55,18 @@ title: A node
 ---
 classDiagram
     direction LR
-    class Node_name{
+    class Node_1{
         +parameters
         +services()
     }
     class Node_2{
     }
 
-    Node_name --> Node_2 : This is a topic being published
-    Node_name ..|> Node_2 : This is a service request call
+    Node_1 --> Node_2 : This is a topic being published\nby Node_1 and subscribed by Node_2
+    Node_1 ..|> Node_2 : This is a service request call
 ```
 
 ### Shared memory
-
-Axone uses shared memory to communicate between nodes. A shared memory is created by the first node that uses it, and it is accessible by all nodes that use the same name.
-
-The shared memory is identified by a name, and the size of the shared memory must be specified when creating it. The size of the shared memory is commonly a power of 2.
-
-To handle concurrent access to the shared memory, Axone relies on a file lock to ensure that only one process can access the shared memory at a time. The file lock creation is handled by the cross-platform package `filelock` which is the only dependency of this project.
 
 For more information on shared memory, see the [Python documentation](https://docs.python.org/3/library/multiprocessing.shared_memory.html).
 
@@ -83,7 +75,7 @@ from axone.node import Node
 
 node = Node(
     name="example_node", # Name of the node
-    memory_endpoint="ExampleNodeMemory", # Name of the shared memory
+    centralized_memory_endpoint="ExampleNodeMemory", # Name of the shared memory
     memory_size=4096, # Size of the shared memory
 )
 ```
@@ -94,8 +86,8 @@ The JSON file defining the network configuration. Only the `memory_endpoint` and
 
 ```json
 {
-  "memory_endpoint": "ExampleNodeMemory",
-  "memory_size": 8192
+  "centralized_memory_endpoint": "ExampleNodeMemory",
+  "centralized_memory_endpoint": 8192 // Not required
 }
 ```
 
@@ -109,6 +101,13 @@ node = Node(
     config_file="axone.json", # The above JSON file
 )
 ```
+
+### AxoneStruct
+
+`AxoneStruct` are specifc objects that can be passed between nodes. They are similar to a dictionary and are serializable following the _struct_ definition. The `AxoneStruct` class is used to ensure that the data passed between nodes is serializable and can be passed between processes. "Messages"
+
+```python
+class
 
 ### Publisher/Subscriber
 
@@ -126,7 +125,9 @@ classDiagram
     example_publisher --> example_subscriber : topic_published_rate_func\n(rate = 2 Hz)
 ```
 
-A publisher can be created using the `publish_rate` or `publish_once` method of a node. The method takes the name of the topic to publish to, and the data to publish. It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a JSON-serializable object as the message.
+A publisher can be created using the `publish_rate` or `publish_once` methods of a node. Each method takes an AxoneStruct structure to publish and a rate (optional for `publish_once`).
+
+It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a subclass of an `AxoneStruct` object, which acts in a similar way of a dict and is serializable following the _struct_ definition. The `rate` argument is the rate at which the message will be published in Hz. A rate of -1 will publish the message only once.
 
 ```python
 from axone.node import Node
