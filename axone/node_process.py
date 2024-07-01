@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 import multiprocessing
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Optional
 
 from axone.axone_struct import AxoneStruct
@@ -51,24 +53,30 @@ class AxoneNodeProcess(AxoneNode):
 
     # region Process functions
 
-    @timeit_if_debug
-    def _call_function(self, function_name, *args, **kwargs) -> Any:
-        """Call a function on the node."""
+    async def _call_function_async_helper(self, function_name, *args, **kwargs):
+        """Helper function to call a function on the node using a thread pool."""
         try:
             self.logger.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
-            self._parent_conn.send((function_name, args, kwargs))
-            return self._parent_conn.recv()
+            loop = asyncio.get_running_loop()
+            # Offload the blocking send to a thread
+            await loop.run_in_executor(self._thread_executor, self._parent_conn.send, (function_name, args, kwargs))
+            # Offload the blocking recv to a thread
+            return await loop.run_in_executor(self._thread_executor, self._parent_conn.recv)
         except AttributeError:
             self.logger.error(f"Cannot call function {function_name} until the node has started.")
             exit(1)
 
-    @timeit_if_debug
+    async def _call_function(self, function_name, *args, **kwargs) -> Any:
+        """Asynchronously call a function on the node and wait for a return."""
+        return await self._call_function_async_helper(function_name, *args, **kwargs)
+
     def _call_function_async(self, function_name, *args, **kwargs) -> None:
-        """Call a function on the node and exit without waiting for a return."""
+        """Asynchronously call a function on the node and exit without waiting for a return."""
         try:
             self.logger.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
-            self._parent_conn.send((function_name, args, kwargs))
-            # No return expected here
+            loop = asyncio.get_running_loop()
+            # Offload the blocking send to a thread, no need to wait for completion
+            loop.run_in_executor(self._thread_executor, self._parent_conn.send, (function_name, args, kwargs))
         except AttributeError:
             self.logger.error(f"Cannot call function {function_name} until the node has started.")
             exit(1)
@@ -115,6 +123,7 @@ class AxoneNodeProcess(AxoneNode):
         rate: float = -1.0,
     ) -> None:
         """Publish a message to a topic once."""
+        # return self._call_function_async("_publish_once", topic=topic, rate=rate)
         return self._call_function_async("_publish_once", topic=topic, rate=rate)
 
     def publish_rate(
@@ -125,6 +134,7 @@ class AxoneNodeProcess(AxoneNode):
         """Register a publisher for a topic."""
         # Note: This is indeed calling the "_publish_once" function but with a
         # periodic rate which is used by the server during publication.
+        # return self._call_function_async("_publish_once", topic=topic, rate=rate)
         return self._call_function_async("_publish_once", topic=topic, rate=rate)
 
     # endregion Publisher functions
@@ -238,7 +248,7 @@ class AxoneNodeProcess(AxoneNode):
     #     return self.call_service("_get_parameters", node_id=node_id)
     # endregion
 
-    def start(self):
+    def start(self) -> None:
         """Start the node."""
         # Re-initialize the shared logger
         global_log_level = logging.getLogger().getEffectiveLevel()
@@ -251,6 +261,7 @@ class AxoneNodeProcess(AxoneNode):
         # Initialize the communication pipes
         self._parent_conn, self._child_conn = multiprocessing.Pipe()
 
+        logging.info(f"Starting node process for : {self.name}")
         # Initialize a Process to run the node
         self._executor = multiprocessing.Process(
             target=self.run,
@@ -312,6 +323,8 @@ class AxoneNodeProcess(AxoneNode):
         self.self_node.advertise()
 
         self._last_federation_time = 0  # The time at which the memory was last federated.
+
+        self._thread_executor = ThreadPoolExecutor()
 
         # Run the server process
         self._server_process(conn)

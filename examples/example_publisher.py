@@ -53,11 +53,11 @@ class ExampleNodePublisher:
             # after registering the publishers which is more flexible.
             self.node.start()
 
-            # Register a rated publisher
-            self.node.publish_rate(ARatedTopic(), rate=3)
+            # # Register a rated publisher
+            # self.node.publish_rate(ARatedTopic(), rate=3)
 
-            # # Register a rated publisher from a callback function
-            self.node.publish_rate(ARatedCallbackTopic(), rate=2)
+            # # # Register a rated publisher from a callback function
+            # self.node.publish_rate(ARatedCallbackTopic(), rate=2)
 
             a_standalone_topic = AStandaloneTopic()
 

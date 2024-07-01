@@ -12,15 +12,20 @@ def generate_uuid(input_string: str) -> str:
 
 
 def timeit_if_debug(func):
+    if not hasattr(func, 'wrapper_depth'):
+        func.wrapper_depth = -1  # Initialize a counter on the function if it doesn't exist
+
     def wrapper(*args, **kwargs):
+        func.wrapper_depth += 1  # Increment the counter each time the wrapper is called
         if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
             start_time = time.perf_counter()
             result = func(*args, **kwargs)
             end_time = time.perf_counter()
-            logging.debug(f"{func.__name__}() execution time: {end_time - start_time} seconds")
-            return result
+            logging.debug(f"[{func.wrapper_depth}] {func.__name__}() execution time: {end_time - start_time} seconds")
         else:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+        func.wrapper_depth -= 1  # Decrement the counter when exiting the wrapper
+        return result
 
     return wrapper
 
