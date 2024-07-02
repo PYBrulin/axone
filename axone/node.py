@@ -211,7 +211,7 @@ class AxoneNode:
         return self._list_node_services(name)
 
     def _list_node_services(self, name: str):
-        print("_list_node_services")
+        # print("_list_node_services")
         node_struct = self._get_node_configuration(name)
         if node_struct is None:
             return None
@@ -223,7 +223,7 @@ class AxoneNode:
 
     def _get_node_services_server_port(self, name: str):
         node_struct = self._get_node_configuration(name)
-        print(name, node_struct)
+        # print(name, node_struct)
         if node_struct is None:
             return None
         return node_struct.get("services_port", None)
@@ -538,13 +538,13 @@ class AxoneNode:
         logging.info("Node server stopped")
 
     def _server_exec(self) -> None:
-        if time.time() - self._last_federation_time > 1:
-            # logging.debug("Update execution")
-            # TODO: Group this in a dedicated function
-            self._last_federation_time = time.time()
+        # if time.time() - self._last_federation_time > 1:
+        #     # logging.debug("Update execution")
+        #     # TODO: Group this in a dedicated function
+        #     self._last_federation_time = time.time()
 
-            # TODO:
-            # self.self_node.update_timestamp()
+        #     # TODO:
+        #     # self.self_node.update_timestamp()
 
         # if self.services is not None:
         #     if time.time() - self._last_services_time > self.service_server_rate:

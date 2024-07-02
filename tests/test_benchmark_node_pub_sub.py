@@ -64,7 +64,7 @@ def subscriber_node_process() -> AxoneNodeProcess:
     return node
 
 
-def test_encode_benchmark(benchmark, test_topic, publisher_node) -> None:
+def test_encode_benchmark(benchmark, test_topic) -> None:
     # Prepare the arguments for the method
     topic = test_topic
 
@@ -73,7 +73,7 @@ def test_encode_benchmark(benchmark, test_topic, publisher_node) -> None:
     benchmark(topic.encode)
 
 
-def test_decode_benchmark(benchmark, test_topic, publisher_node) -> None:
+def test_decode_benchmark(benchmark, test_topic) -> None:
     # Prepare the arguments for the method
     topic = test_topic
     encoded_message = topic.encode()
@@ -96,6 +96,7 @@ def test_publish_once_benchmark(benchmark, test_topic, publisher_node) -> None:
     benchmark(publisher_node.publish_once, topic, rate)
 
     publisher_node.stop()
+    del publisher_node
 
 
 def test_publish_once_process_benchmark(benchmark, test_topic, publisher_node_process) -> None:
@@ -111,6 +112,7 @@ def test_publish_once_process_benchmark(benchmark, test_topic, publisher_node_pr
     benchmark(publisher_node_process.publish_once, topic, rate)
 
     publisher_node_process.stop()
+    del publisher_node_process
 
 
 def test_listen_once_benchmark(benchmark, test_topic, publisher_node, subscriber_node) -> None:
@@ -126,7 +128,9 @@ def test_listen_once_benchmark(benchmark, test_topic, publisher_node, subscriber
     benchmark(subscriber_node.listen_once, topic.__class__.__name__)
 
     publisher_node.stop()
+    del publisher_node
     subscriber_node.stop()
+    del subscriber_node
 
 
 def test_listen_once_process_benchmark(benchmark, test_topic, publisher_node, subscriber_node_process) -> None:
@@ -142,4 +146,6 @@ def test_listen_once_process_benchmark(benchmark, test_topic, publisher_node, su
     benchmark(subscriber_node_process.listen_once, topic.__class__.__name__)
 
     publisher_node.stop()
+    del publisher_node
     subscriber_node_process.stop()
+    del subscriber_node_process

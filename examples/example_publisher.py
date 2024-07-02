@@ -60,12 +60,22 @@ class ExampleNodePublisher:
             self.node.publish_rate(ARatedCallbackTopic(), rate=2)
 
             a_standalone_topic = AStandaloneTopic()
+            # a_standalone_topic_dict = AStandaloneTopic()
 
             counter = 0
             while True:
                 a_standalone_topic.message = f"Hello from topic_published_once {counter}"
                 self.node.publish_once(a_standalone_topic)
                 logging.info(f"Published message to topic_published_once : {a_standalone_topic.message}")
+
+                # a_standalone_topic_dict.update(
+                #     {
+                #         "message": f"Hello from a_standalone_topic_dict {counter}",
+                #         "counter": counter,
+                #     }
+                # )
+                # self.node.publish_once(a_standalone_topic_dict)
+                # logging.info(f"Published message to a_standalone_topic_dict : {a_standalone_topic_dict.message}")
 
                 counter += 1
 

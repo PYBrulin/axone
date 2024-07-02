@@ -5,7 +5,7 @@ import os
 from typing import Any, Callable, Dict, Optional
 
 from axone.axone_struct import AxoneStruct
-from axone.custom_logger import CustomFormatter
+from axone.custom_logger import CustomFormatter  # noqa
 from axone.node import AxoneNode
 from axone.publisher import Publisher
 from axone.subscriber import Subscription
@@ -20,6 +20,9 @@ class AxoneNodeProcess(AxoneNode):
     They are prefixed with an underscore to avoid name collisions.
     Communication is done through a Pipe between the main thread and the
     process.
+
+    The MainProcess should only call functions in an asynchronous way.
+    The NodeProcess is responsible for interacting with the Nodes.
     """
 
     def __init__(self, name: str, **kwargs) -> None:
@@ -55,22 +58,22 @@ class AxoneNodeProcess(AxoneNode):
     def _call_function(self, function_name, *args, **kwargs) -> Any:
         """Call a function on the node."""
         try:
-            self.logger.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
+            logging.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
             self._parent_conn.send((function_name, args, kwargs))
             return self._parent_conn.recv()
         except AttributeError:
-            self.logger.error(f"Cannot call function {function_name} until the node has started.")
+            logging.error(f"Cannot call function {function_name} until the node has started.")
             exit(1)
 
     @timeit_if_debug
     def _call_function_async(self, function_name, *args, **kwargs) -> None:
         """Call a function on the node and exit without waiting for a return."""
         try:
-            self.logger.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
+            logging.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
             self._parent_conn.send((function_name, args, kwargs))
             # No return expected here
         except AttributeError:
-            self.logger.error(f"Cannot call function {function_name} until the node has started.")
+            logging.error(f"Cannot call function {function_name} until the node has started.")
             exit(1)
 
     # endregion Process functions
@@ -171,10 +174,25 @@ class AxoneNodeProcess(AxoneNode):
         topic: str,
     ) -> dict:
         """Listen to a topic once."""
-        return self._call_function("_listen_once_async", topic=topic)
+
+        # this function differs from the one in the Node class in that it will
+        # try to return the latest AxoneStruct fetched by the listener server
+        # from the child process.
+
+        # Try to fetch latest data from subscription_queue
+        while self._subscription_queue.qsize() > 0:
+            _topic, _struct = self._subscription_queue.get()
+            # Add the received struct to the local subscriptions dict
+            logging.debug(f"Adding fetched struct {_topic} to subscriptions")
+            self.subscriptions[_topic] = _struct
+
+        # Request an update for the topic for the next time
+        self._call_function_async("_listen_once_async", topic=topic)
+
+        return self.subscriptions.get(topic, AxoneStruct())
 
     @timeit_if_debug
-    def _listen_once_async(self, topic: str) -> AxoneStruct:
+    def _listen_once(self, topic: str) -> AxoneStruct:
         """Listen to a topic once."""
         # This variant of the listen_once function is used in the NodeProcess variant
         # to get the AxoneStruct from the shared memory. But, instead of fetching
@@ -208,6 +226,42 @@ class AxoneNodeProcess(AxoneNode):
         # return the last struct fetched diretcly from the subscriptions
         return self.subscriptions[topic]._topic
 
+    @timeit_if_debug
+    def _listen_once_async(self, topic: str) -> AxoneStruct:
+        """Listen to a topic once."""
+        # This variant of the listen_once function is used in the NodeProcess variant
+        # to get the AxoneStruct from the shared memory. But, instead of fetching
+        # and then returning the AxoneStruct, it will instead return a struct that
+        # was fetched by the listener server at a previous iteration.
+        # This is because the listener server is running in a separate process
+        # and the AxoneStruct cannot be pickled and sent back to the main process.
+
+        # TODO: Regarding the default rate we are setting here, maybe the subscribe
+        # function should be called with a rate argument in the NodeProcess variant.
+
+        if topic not in list(self.subscriptions):
+            # Request a subscription to the topic and go fetch the struct now
+            # So that the client gets an answer now (although it will be slow)
+            # Create a new subscription
+            self.subscriptions[topic] = Subscription(topic)
+            logging.warning(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
+            # Fetch the struct now
+            # This is a blocking call
+            self.subscriptions[topic].subscribe()
+            # Force the rate to 1.0 to force the server to fetch the struct
+            self.subscriptions[topic].rate = 1.0
+        else:
+            if self.subscriptions[topic].rate < 0:
+                # If the rate is negative, it means the subscription is not
+                # fetched periodically. So set the rate at 1.0 to force the server
+                # to fetch the struct for the next iteration.
+                self.subscriptions[topic].rate = 1.0
+                logging.warning(f"Setting rate to {self.subscriptions[topic].rate} for subscription to {topic}")
+
+        # Send the last struct to the parent_conn
+        logging.debug(f"Sending fetched struct {topic} to subscription_queue")
+        self._subscription_queue.put((topic, self.subscriptions[topic]._topic))
+
     # endregion Subscriber functions
 
     # region Services functions
@@ -240,23 +294,27 @@ class AxoneNodeProcess(AxoneNode):
 
     def start(self):
         """Start the node."""
-        # Re-initialize the shared logger
-        global_log_level = logging.getLogger().getEffectiveLevel()
-        multiprocessing.log_to_stderr(global_log_level)
-        self.logger = multiprocessing.get_logger()
-        formatter = CustomFormatter()
-        for handler in self.logger.handlers:
-            handler.setFormatter(formatter)
+        # # Re-initialize the shared logger
+        # global_log_level = logging.getLogger().getEffectiveLevel()
+        # multiprocessing.log_to_stderr(global_log_level)
+        # self.logger = multiprocessing.get_logger()
+        # formatter = CustomFormatter()
+        # for handler in self.logger.handlers:
+        #     handler.setFormatter(formatter)
 
         # Initialize the communication pipes
+        # Parent_conn is used to receive data from the process
+        # Child_conn is used to send data to the process
         self._parent_conn, self._child_conn = multiprocessing.Pipe()
+        self._subscription_queue = multiprocessing.Queue()
 
         # Initialize a Process to run the node
         self._executor = multiprocessing.Process(
             target=self.run,
             args=(
                 self.name,
-                self._child_conn,
+                self._child_conn,  # Send the child_conn to the process
+                self._subscription_queue,  # Send the subscription_queue to the process
             ),
             kwargs=self.kwargs,
             name="NodeProcess",
@@ -270,7 +328,7 @@ class AxoneNodeProcess(AxoneNode):
             self.setup_service_server()
             self.service_server.start()
 
-    def run(self, name, conn, **kwargs) -> None:
+    def run(self, name, child_conn, subscription_queue, **kwargs) -> None:
         """Run the node."""
         # Initialize the node
 
@@ -284,6 +342,7 @@ class AxoneNodeProcess(AxoneNode):
         # Due to this limitation, we need to periodically check if there are new
         # subscribers to add.
         self._subscriptions: Dict[str, Subscription] = {}
+        self._subscription_queue = subscription_queue
 
         # Check for required parameters
         if self.name == "":
@@ -314,14 +373,15 @@ class AxoneNodeProcess(AxoneNode):
         self._last_federation_time = 0  # The time at which the memory was last federated.
 
         # Run the server process
-        self._server_process(conn)
+        self._server_process(child_conn)
 
     def stop(self) -> None:
         """Stop the node."""
 
-        # Close the pipes
+        # Close the pipes and the queue
         self._parent_conn.close()
         self._child_conn.close()
+        self._subscription_queue.close()
 
         # Terminate the process
         self._executor.terminate()
@@ -331,11 +391,11 @@ class AxoneNodeProcess(AxoneNode):
         """Join the node."""
         self._executor.join()
 
-    def _server_process(self, conn) -> None:
+    def _server_process(self, child_conn) -> None:
         while True:
-            # Check if there's a task to be executed
-            if conn.poll():
-                task = conn.recv()
+            # Check if there's a task to be executed from the child_conn endpoint
+            if child_conn.poll():
+                task = child_conn.recv()
                 function_name, args, kwargs = task
                 # Map the function name to the actual function
                 # Needed to avoid pickling the function itself
@@ -343,10 +403,10 @@ class AxoneNodeProcess(AxoneNode):
                 try:
                     function = getattr(self, f'{function_name}')
                     result = function(*args, **kwargs)
-                    self.logger.debug(f"Result: {result}")
-                    conn.send(result)
+                    logging.debug(f"Result: {result}")
+                    child_conn.send(result)
                 except AttributeError:
-                    self.logger.error(f"Function {function_name} possibly does not exist.", exc_info=True)
+                    logging.error(f"Function {function_name} possibly does not exist.", exc_info=True)
             else:
                 # Handle the case where there's nothing to receive
                 pass

@@ -17,7 +17,12 @@ def timeit_if_debug(func):
             start_time = time.perf_counter()
             result = func(*args, **kwargs)
             end_time = time.perf_counter()
-            logging.debug(f"{func.__name__}() execution time: {end_time - start_time} seconds")
+            millitime = (end_time - start_time) * 1000
+            # We expect the execution time to be less than 1 millisecond for most functions
+            if millitime > 1:
+                logging.error(f"{func.__name__}() execution time: {millitime} milliseconds")
+            else:
+                logging.debug(f"{func.__name__}() execution time: {millitime} milliseconds")
             return result
         else:
             return func(*args, **kwargs)

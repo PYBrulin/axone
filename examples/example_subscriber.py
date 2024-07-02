@@ -56,7 +56,7 @@ class ExampleNodeSubscriber:
                 print(self.node.listen_once("ARatedTopic"))
                 print(self.node.listen_once("ARatedCallbackTopic"))
 
-                print(self.node.subscriptions)
+                # print(self.node.subscriptions)
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")

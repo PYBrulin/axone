@@ -66,7 +66,7 @@ class ServiceServer:
             else:
                 raise TypeError(f"service {service} is not a string or a function.")
 
-        print(self._services_map)
+        # print(self._services_map)
 
     @property
     def services_keys(self) -> list[str]:
