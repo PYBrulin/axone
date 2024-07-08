@@ -14,10 +14,10 @@ def generate_uuid(input_string: str) -> str:
 def timeit_if_debug(func):
     def wrapper(*args, **kwargs):
         if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-            start_time = time.perf_counter()
+            start_time = time.perf_counter_ns()
             result = func(*args, **kwargs)
-            end_time = time.perf_counter()
-            millitime = (end_time - start_time) * 1000
+            end_time = time.perf_counter_ns()
+            millitime = (end_time - start_time) / 1_000_000
             # We expect the execution time to be less than 1 millisecond for most functions
             if millitime > 1:
                 logging.error(f"{func.__name__}() execution time: {millitime} milliseconds")
