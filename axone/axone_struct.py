@@ -86,7 +86,39 @@ def standard_data_encoding(*args, **kwargs) -> bytes:
             output += value_bytes
             logging.debug(f"Encoding string {value} of length {value_len}")
 
-        # AxoneStructs are not supported here
+        elif isinstance(value, list):
+            output += b'l'
+            output += struct.pack('I', len(value))
+            logging.debug(f"Encoding list {key} of length {len(value)}")
+            for item in value:
+                if isinstance(item, bool):
+                    output += b'?'
+                    output += struct.pack('?', item)
+                    logging.debug(f"Encoding boolean list item of value {item}")
+
+                elif isinstance(item, int):
+                    output += b'i'
+                    output += struct.pack('i', item)
+                    logging.debug(f"Encoding int list item of value {item}")
+
+                elif isinstance(item, float):
+                    output += b'd'
+                    output += struct.pack('d', item)
+                    logging.debug(f"Encoding double list item of value {item}")
+
+                elif isinstance(item, str):
+                    item_bytes = item.encode("utf-8")
+                    item_len = len(item_bytes)
+                    if item_len > 127:
+                        raise ValueError(f"List item value too long for key-value pair\n\t{key}:`{item}`")
+                    output += f'n{item_len}s'.encode()
+                    output += item_bytes
+                    logging.debug(f"Encoding string list item {item} of length {item_len}")
+
+                else:
+                    raise ValueError(f"Unknown list item type {type(item)} for key-value pair\n\t{key}:'{item}'")
+
+        # ! AxoneStructs are not supported here
         # elif isinstance(value, AxoneStruct):
         #     output += b"A"
         #     encoded_struct = value.encode()
@@ -141,7 +173,31 @@ def standard_data_decoding(data) -> dict:
             value_len = int(value_len[:-1])
             value = bytes(next(data_iter) for _ in range(value_len)).decode("utf-8")
 
-        # AxoneStructs are not supported here
+        elif attr_type == 'l':  # List type
+            list_len = struct.unpack('I', bytes(next(data_iter) for _ in range(struct.calcsize('I'))))[0]
+            value = []
+            for _ in range(list_len):
+                item_type = chr(next(data_iter))
+                if item_type == '?':
+                    item = struct.unpack('?', bytes(next(data_iter) for _ in range(struct.calcsize('?'))))[0]
+                elif item_type == 'i':
+                    item = struct.unpack('i', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
+                elif item_type == 'd':
+                    item = struct.unpack('d', bytes(next(data_iter) for _ in range(struct.calcsize('d'))))[0]
+                elif item_type == 'n':
+                    item_len = ""
+                    while True:
+                        _charac = chr(next(data_iter))
+                        item_len += _charac
+                        if _charac.isalpha():
+                            break
+                    item_len = int(item_len[:-1])
+                    item = bytes(next(data_iter) for _ in range(item_len)).decode("utf-8")
+                else:
+                    raise ValueError(f"Unknown list item type {item_type}")
+                value.append(item)
+
+        # ! AxoneStructs are not supported here
         # elif attr_type == 'A':
         #     value = AxoneStruct()
         #     value_len = struct.unpack('i', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
@@ -360,6 +416,39 @@ class AxoneStruct:
                 output += value_bytes
                 self.__logger__.debug(f"Encoding string {value} of length {value_len}")
 
+            elif isinstance(value, list):
+                output += b'l'
+                output += struct.pack('I', len(value))
+                self.__logger__.debug(f"Encoding list {key} of length {len(value)}")
+                for item in value:
+                    if isinstance(item, bool):
+                        output += b'?'
+                        output += struct.pack('?', item)
+                        self.__logger__.debug(f"Encoding boolean list item of value {item}")
+
+                    elif isinstance(item, int):
+                        output += b'i'
+                        output += struct.pack('i', item)
+                        self.__logger__.debug(f"Encoding int list item of value {item}")
+
+                    elif isinstance(item, float):
+                        output += b'd'
+                        output += struct.pack('d', item)
+                        self.__logger__.debug(f"Encoding double list item of value {item}")
+
+                    elif isinstance(item, str):
+                        item_bytes = item.encode("utf-8")
+                        item_len = len(item_bytes)
+                        if item_len > 127:
+                            raise ValueError(f"List item value too long for key-value pair\n\t{key}:`{item}`")
+                        # output += struct.pack(f'n{item_len}s', item_bytes)
+                        output += f'n{item_len}s'.encode()
+                        output += item_bytes
+                        self.__logger__.debug(f"Encoding string list item {item} of length {item_len}")
+
+                    else:
+                        raise ValueError(f"Unknown list item type {type(item)} for key-value pair\n\t{key}:'{item}'")
+
             elif isinstance(value, AxoneStruct):
                 output += b"A"
                 encoded_struct = value.encode()
@@ -413,6 +502,30 @@ class AxoneStruct:
                 value_len = int(value_len[:-1])
                 value = bytes(next(data_iter) for _ in range(value_len)).decode("utf-8")
 
+            elif attr_type == 'l':
+                list_len = struct.unpack('I', bytes(next(data_iter) for _ in range(struct.calcsize('I'))))[0]
+                value = []
+                for _ in range(list_len):
+                    item_type = chr(next(data_iter))
+                    if item_type == '?':
+                        item = struct.unpack('?', bytes(next(data_iter) for _ in range(struct.calcsize('?'))))[0]
+                    elif item_type == 'i':
+                        item = struct.unpack('i', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
+                    elif item_type == 'd':
+                        item = struct.unpack('d', bytes(next(data_iter) for _ in range(struct.calcsize('d'))))[0]
+                    elif item_type == 'n':
+                        item_len = ""
+                        while True:
+                            _charac = chr(next(data_iter))
+                            item_len += _charac
+                            if _charac.isalpha():
+                                break
+                        item_len = int(item_len[:-1])
+                        item = bytes(next(data_iter) for _ in range(item_len)).decode("utf-8")
+                    else:
+                        raise ValueError(f"Unknown list item type {item_type}")
+                    value.append(item)
+
             elif attr_type == 'A':
                 value = AxoneStruct()
                 value_len = struct.unpack('i', bytes(next(data_iter) for _ in range(struct.calcsize('i'))))[0]
@@ -424,6 +537,9 @@ class AxoneStruct:
 
             self.__logger__.debug(f"Setting attribute {key} to {value if not attr_type == 'A' else type(value)}")
             setattr(self, key, value)
+
+
+# Standard Axone messages
 
 
 class AxoneTopic(AxoneStruct):
@@ -449,6 +565,8 @@ class AxoneService(AxoneStruct):
 
 
 if __name__ == "__main__":
+    # Several examples of how to use the AxoneStruct class
+
     from axone.custom_logger import setup_logger
 
     setup_logger(debug=True)
@@ -468,6 +586,7 @@ if __name__ == "__main__":
         g: float = 0.00001357
         h: str = "hello"
         time: float = time.time  # a callable that will be called when the attribute is accessed
+        list_of_random_types: list[Any] = [1, 2.0, "hello", True]
 
         xyz: SubMessage = SubMessage()
 

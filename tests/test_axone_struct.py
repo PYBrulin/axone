@@ -120,6 +120,58 @@ class TestAxoneStruct(unittest.TestCase):
         with self.assertRaises(ValueError):
             topic.encode()
 
+    def test_pack_list_of_strings(self):
+        topic = ATopicPassedToAxone()
+        topic.list_of_strings = ["hello", "world"]
+        encoded_message = topic.encode()
+
+        # Decode
+        topic_decoded = AxoneStruct()
+        topic_decoded.decode(encoded_message)
+        self.assertEqual(topic_decoded.list_of_strings, ["hello", "world"])
+
+    def test_pack_list_of_ints(self):
+        topic = ATopicPassedToAxone()
+        topic.list_of_ints = [1, 2]
+        encoded_message = topic.encode()
+
+        # Decode
+        topic_decoded = AxoneStruct()
+        topic_decoded.decode(encoded_message)
+        self.assertEqual(topic_decoded.list_of_ints, [1, 2])
+
+    def test_pack_list_of_floats(self):
+        topic = ATopicPassedToAxone()
+        topic.list_of_floats = [1.0, 2.0]
+        encoded_message = topic.encode()
+
+        # Decode
+        topic_decoded = AxoneStruct()
+        topic_decoded.decode(encoded_message)
+        self.assertEqual(topic_decoded.list_of_floats, [1.0, 2.0])
+
+    def test_pack_list_of_bools(self):
+        topic = ATopicPassedToAxone()
+        topic.list_of_bools = [True, False]
+        encoded_message = topic.encode()
+
+        # Decode
+        topic_decoded = AxoneStruct()
+        topic_decoded.decode(encoded_message)
+        self.assertEqual(topic_decoded.list_of_bools, [True, False])
+
+    def test_pack_list_of_random_types(self):
+        topic = ATopicPassedToAxone()
+        topic.list_of_random_types = [1, 2.0, "hello", True]
+        encoded_message = topic.encode()
+
+        # Decode
+        topic_decoded = AxoneStruct()
+        topic_decoded.decode(encoded_message)
+        self.assertEqual(topic_decoded.list_of_random_types, [1, 2.0, "hello", True])
+
+    # def test_pack_list_of_submessages(self):
+
     # def test_pack_callable(self):
     #     topic = ATopicPassedToAxone()
     #     topic.a_callable = lambda x: 1 + 1
@@ -163,6 +215,12 @@ class TestStandardDataEncoding(unittest.TestCase):
             b'\x04\x00\x00\x00n1sa?\x01n1sbi\x01\x00\x00\x00n1scd\x00\x00\x00\x00\x00\x00\xf0?n1sdn5shello',
         )
 
+    def test_encode_list_of_strings(self):
+        self.assertEqual(
+            standard_data_encoding(list_of_strings=['hello', 'world']),
+            b'\x01\x00\x00\x00n15slist_of_stringsl\x02\x00\x00\x00n5shellon5sworld',
+        )
+
     def test_encode_empty_attribute(self) -> None:
         self.assertEqual(standard_data_encoding(a=None), b'\x01\x00\x00\x00n1sax\x00')
 
@@ -170,9 +228,9 @@ class TestStandardDataEncoding(unittest.TestCase):
         with self.assertRaises(ValueError):
             standard_data_encoding(a='a' * 128)
 
-    def test_encode_unsupported_type(self):
-        with self.assertRaises(ValueError):
-            standard_data_encoding(a=[])
+    # def test_encode_unsupported_type(self):
+    #     with self.assertRaises(ValueError):
+    #         standard_data_encoding(a=[])
 
     def test_decode_single_attribute(self):
         # Test bool
@@ -190,6 +248,12 @@ class TestStandardDataEncoding(unittest.TestCase):
                 b'\x04\x00\x00\x00n1sa?\x01n1sbi\x01\x00\x00\x00n1scd\x00\x00\x00\x00\x00\x00\xf0?n1sdn5shello'
             ),
             {'a': True, 'b': 1, 'c': 1.0, 'd': 'hello'},
+        )
+
+    def test_decode_list_of_strings(self):
+        self.assertEqual(
+            standard_data_decoding(b'\x01\x00\x00\x00n15slist_of_stringsl\x02\x00\x00\x00n5shellon5sworld'),
+            {'list_of_strings': ['hello', 'world']},
         )
 
     def test_decode_empty_attribute(self) -> None:
