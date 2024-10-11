@@ -108,6 +108,10 @@ class AxoneNodeProcess(AxoneNode):
         """Check if a node is advertising services."""
         return self._call_function("_is_node_advertising_services", name=name)
 
+    def get_node_topics(self, name: str) -> list[str]:
+        """List the topics published by a node."""
+        return self._call_function("_get_node_topics", name=name)
+
     # endregion Common functions
 
     # region Publisher functions

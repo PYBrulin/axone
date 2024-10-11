@@ -27,7 +27,7 @@ class ExampleNodeSubscriber:
         )
         self.last_message = None
 
-    def print(self, topic_struct: AxoneStruct) -> None:
+    def print_message(self, topic_struct: AxoneStruct) -> None:
         if topic_struct.get("message") != self.last_message:
             self.last_message = topic_struct.get("message")
         print(topic_struct.get("message"))
@@ -43,7 +43,7 @@ class ExampleNodeSubscriber:
             self.node.start()
 
             # Subscribe to rated topics
-            self.node.subscribe("ARatedTopic", callback=self.print)
+            self.node.subscribe("ARatedTopic", callback=self.print_message)
             self.node.subscribe("ARatedCallbackTopic", callback=self.print_callback)
 
             while True:

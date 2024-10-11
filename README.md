@@ -10,6 +10,10 @@ The package provide basic functionalities similar to ROS, such as:
 - Service/Client: A node can provide a service, and other nodes can call this service.
 - (WIP) Parameter server: A node can store parameters on the parameter server, and other nodes can retrieve them.
 
+> axon, portion of a nerve cell (neuron) that carries nerve impulses away from the cell body. A neuron typically has one axon that connects it with other neurons or with muscle or gland cells.
+>
+> Britannica, The Editors of Encyclopaedia. "axon". Encyclopedia Britannica, 6 May. 2024, https://www.britannica.com/science/axon. Accessed 12 July 2024.
+
 ## Installation
 
 Axone can be installed locally using pip:
@@ -104,10 +108,28 @@ node = Node(
 
 ### AxoneStruct
 
-`AxoneStruct` are specifc objects that can be passed between nodes. They are similar to a dictionary and are serializable following the _struct_ definition. The `AxoneStruct` class is used to ensure that the data passed between nodes is serializable and can be passed between processes. "Messages"
+`AxoneStruct` are objects that can be passed between nodes. They are similar to a dictionary and are serializable following the _struct_ definition. The `AxoneStruct` class is used to ensure that the data passed between nodes is serializable and can be passed between processes. The `AxoneStruct` class is a subclass of the `dict` class and can be filled with any base python type.
 
 ```python
-class
+from axone.axone_struct import AxoneStruct
+
+class SubMessage(AxoneStruct):
+    x: int = 0
+    y: float = 1.2
+    z: str = "34"
+
+class ATopicPassedToAxone(AxoneTopic):
+    a: bool = True
+    b: int = 0
+    c: int = 1
+    d: int = 2
+    e: float = 1.23456789
+    f: float = 1e9
+    g: float = 0.00001357
+    h: str = "hello"
+    time: float = time.time  # a callable whose return value is stored
+    xyz: SubMessage = SubMessage()
+```
 
 ### Publisher/Subscriber
 
@@ -120,9 +142,9 @@ classDiagram
     class example_publisher
     class example_subscriber
 
-    example_publisher --> example_subscriber : topic_published_once\n(rate = -1)
-    example_publisher --> example_subscriber : topic_published_rate\n(rate = 3 Hz)
-    example_publisher --> example_subscriber : topic_published_rate_func\n(rate = 2 Hz)
+    example_publisher --> example_subscriber : AStandaloneTopic\n(rate = -1)
+    example_publisher --> example_subscriber : ARatedCallbackTopic\n(rate = 2 Hz)
+    example_publisher --> example_subscriber : ARatedTopic\n(rate = 3 Hz)
 ```
 
 A publisher can be created using the `publish_rate` or `publish_once` methods of a node. Each method takes an AxoneStruct structure to publish and a rate (optional for `publish_once`).
@@ -130,44 +152,70 @@ A publisher can be created using the `publish_rate` or `publish_once` methods of
 It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a subclass of an `AxoneStruct` object, which acts in a similar way of a dict and is serializable following the _struct_ definition. The `rate` argument is the rate at which the message will be published in Hz. A rate of -1 will publish the message only once.
 
 ```python
-from axone.node import Node
+import time
+from axone.node import AxoneNode
+from axone.axone_struct import AxoneStruct
 
-node = Node(
+class ARatedTopic(AxoneTopic):
+    message: str = "Hello from topic_published_rate"
+
+class ARatedCallbackTopic(AxoneTopic):
+    def _update_message(self) -> None:
+        return f"Hello message_callback from topic_published_rate_func {2 * time.time()}"
+    message_string: int = lambda x: 1 + 1
+    message_callback: str = _update_message
+
+class AStandaloneTopic(AxoneTopic):
+    message: str = "I am a message that is eventually going to be overwritten by the node. bye."
+
+node = AxoneNode(
     name="example_publisher",
-    memory_endpoint="ExampleNodeMemory",
-    memory_size=4096,
+    centralized_memory_endpoint="ExampleNodeMemory",
 )
-node.publish_once(
-    "topic_published_once",
-    message={"data": "Hello from topic_published_once"},
-)
+node.start()
 
-def callable_function(self) -> None:
-    return {"message": "Hello world!"}  # Must return a dictionary
+# Register a rated publisher
+node.publish_rate(ARatedTopic(), rate=3)
 
-node.publish_rate(
-    "topic_published_rate_func",
-    message=callable_function,
-    rate=2,
-)
+# # Register a rated publisher from a callback function
+node.publish_rate(ARatedCallbackTopic(), rate=2)
+
+while True:
+    # Register a standalone publisher that will publish only once every second
+    a_standalone_topic = AStandaloneTopic()
+    a_standalone_topic.message = f"Hello from topic_published_once {counter}"
+    node.publish_once(a_standalone_topic)
+    time.sleep(1)
 ```
 
 A subscriber can be created using the `subscribe` method of a node. The method takes the name of the topic to subscribe to, and a callable callback function that will be called when a message is received. The callback function must take a single argument, which will be the received message. Parsing of the message should be handled by the callback function.
 
 ```python
-from axone.node import Node
+from axone.node import AxoneNode
+from axone.axone_struct import AxoneStruct
 
-node = Node(
+node = AxoneNode(
     name="example_subscriber",
-    memory_endpoint="ExampleNodeMemory",
-    memory_size=4096,
+    centralized_memory_endpoint="ExampleNodeMemory",
 )
 
-def callback(message):
-    print(f"Raw object: {message}")
-    print(f"Data within: {message.get('data')}")
+def print_message(topic_struct: AxoneStruct) -> None:
+    print(topic_struct.get("message"))
 
-node.subscribe("topic_published_once", callback=callback)
+def print_callback(topic_struct: AxoneStruct) -> None:
+    print(topic_struct.get("message_string"))
+    print(topic_struct.get("message_callback"))
+
+# Subscribe to rated topics
+node.subscribe("ARatedTopic", callback=print_message)
+node.subscribe("ARatedCallbackTopic", callback=print_callback)
+
+while True:
+    # Listen to any topic every second
+    node.listen_once("AStandaloneTopic")
+    node.listen_once("ARatedTopic")
+    node.listen_once("ARatedCallbackTopic")
+    time.sleep(1)
 ```
 
 ### Service: Request/Response

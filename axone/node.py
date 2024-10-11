@@ -86,6 +86,8 @@ class AxoneNode:
                 0 if not self.services_names else kwargs.get("services_server_port", 0)
             )  # Port to access the services
 
+            self.topics = kwargs.get("topics", [])  # List of topics the node publishes
+
             self.node_status = self.NodeStatus()
 
             self.memory = AxoneSharedMemory(
@@ -102,7 +104,26 @@ class AxoneNode:
             self.memory['services'] = self.services_names
             self.memory['services_port'] = self.services_server_port
             # self.memory['parameters'] = {}
-            # self.memory['topics'] = []
+            self.memory['topics'] = self.topics
+
+        def update_timestamp(self) -> None:
+            """Update the timestamp of the node."""
+            self.memory['timestamp'] = time.time()
+
+        def add_topic(self, topic: str) -> None:
+            """Add a topic to the node."""
+            self.topics.append(topic)
+            self.advertise()
+
+        def remove_topic(self, topic: str) -> None:
+            """Remove a topic from the node."""
+            self.topics.remove(topic)
+            self.advertise()
+
+        def update_topics(self, topics: list[str]) -> None:
+            """Update the topics of the node."""
+            self.topics = topics
+            self.advertise()
 
     def __init__(self, name: str, **kwargs) -> None:
         """Initialize a node for the Axone framework."""
@@ -201,10 +222,14 @@ class AxoneNode:
             return None
 
         # Connect to the requested node memory
-        with AxoneSharedMemory(name=generate_uuid(node), centralized=False) as node_memory:
-            # Check if the node as the attribute services
-            logging.debug(f"Node {name} has the attribute services.")
-            return node_memory.struct.list_instance_attributes()
+        try:
+            with AxoneSharedMemory(name=generate_uuid(node), centralized=False) as node_memory:
+                # Check if the node as the attribute services
+                logging.debug(f"Node {name} has the attribute services.")
+                return node_memory.struct.list_instance_attributes()
+        except ValueError:
+            logging.error(f"Node {name} does not have a memory. It might be offline.")
+            return None
 
     def list_node_services(self, name: str):
         """List the services available for a node."""
@@ -243,6 +268,17 @@ class AxoneNode:
     # def is_service_advertised(self, node_id: str, service: str) -> bool:
     #     """Check if an service is advertised by a node."""
     #     return self._is_service_advertised(node_id, service)
+
+    def get_node_topics(self, name: str) -> list[str]:
+        """List the topics available for a node."""
+        return self._get_node_topics(name)
+
+    def _get_node_topics(self, name: str) -> list[str]:
+        node_struct = self._get_node_configuration(name)
+        if node_struct is None:
+            return []
+        return node_struct.get("topics", [])
+
     # endregion Common functions
 
     # region Publisher functions
@@ -279,6 +315,7 @@ class AxoneNode:
         # Check if the topic is registered
         if topic_name not in self.publishers:
             self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id)
+            self.self_node.add_topic(topic_name)
 
         # Publish the message
         self.publishers[topic_name].publish(topic)
@@ -440,7 +477,7 @@ class AxoneNode:
             server_address = f'/tmp/{server_port}_socket'
         else:
             family = socket.AF_INET
-            input_port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+            input_port = int(server_port) if server_port is not None else 0
             if input_port == 0:
                 raise ValueError("Please provide a port number")
             server_address = ('localhost', input_port)
