@@ -298,23 +298,25 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
+        method: str = "shared_memory",
     ) -> None:
         """Register a publisher for a topic."""
         # Create a new publisher
         topic_name = topic.__class__.__name__
-        self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id)
-        logging.debug(f"Registered publisher {topic_name} at rate {rate}.")
+        self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id, method=method)
+        logging.debug(f"Registered publisher {topic_name} at rate {rate} using {method}.")
 
     def _publish_once(
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
+        method: str = "shared_memory",
     ) -> None:
         """Publish a message once on a topic."""
         topic_name = topic.__class__.__name__
         # Check if the topic is registered
         if topic_name not in self.publishers:
-            self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id)
+            self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id, method=method)
             self.self_node.add_topic(topic_name)
 
         # Publish the message
@@ -325,11 +327,13 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
+        method: str = "shared_memory",
     ) -> None:
         """Publish a message on a topic."""
         self._publish_once(
             topic,
             rate,
+            method,
         )
 
     def _publish_loop(self) -> None:
@@ -350,26 +354,25 @@ class AxoneNode:
     # region Subscriber functions
     @property
     def subscriptions(self) -> Dict[str, Subscription]:
-        """Return the node subscriptions dictionnary containing the topics as keys and the callbacks as values."""
+        """Return the node subscriptions dictionary containing the topics as keys and the callbacks as values."""
         return self._subscriptions
 
     @subscriptions.setter
     def subscriptions(self, subscriptions: Dict[str, Subscription]) -> None:
         """Set the node subscriptions."""
         self._subscriptions = subscriptions
-        # self.kwargs["subscriptions"] = subscriptions
 
-    def subscribe(self, topic_name: str, callback: Callable) -> None:
+    def subscribe(self, topic_name: str, callback: Callable, method: str = "shared_memory") -> None:
         """Subscribe to a topic."""
-        return self._subscribe(topic_name, callback)
+        return self._subscribe(topic_name, callback, method)
 
-    def _subscribe(self, topic_name: str, callback: Callable) -> None:
+    def _subscribe(self, topic_name: str, callback: Callable, method: str = "shared_memory") -> None:
         # Add the callback to the list of callbacks for this topic
         if topic_name not in list(self.subscriptions):
             # Create a new subscription
-            self.subscriptions[topic_name] = Subscription(topic_name)
+            self.subscriptions[topic_name] = Subscription(topic_name, method=method)
             self.subscriptions[topic_name].callbacks.append(callback)
-            logging.info(f"Registering subscription {topic_name} for node {self.node_id}:{self.name}.")
+            logging.info(f"Registering subscription {topic_name} for node {self.node_id}:{self.name} using {method}.")
         else:
             # Add the callback to the existing subscription
             self.subscriptions[topic_name].callbacks.append(callback)
@@ -397,20 +400,21 @@ class AxoneNode:
         self.subscriptions[topic_name].subscribe()
         return self.subscriptions[topic_name]._topic
 
-    def _listen_once(self, topic: str) -> AxoneStruct:
+    def _listen_once(self, topic: str, method: str = "shared_memory") -> AxoneStruct:
         """Listen to a topic once."""
-        sub = Subscription(topic)
+        sub = Subscription(topic, method=method)
         sub.subscribe()
         return sub._topic
 
     @timeit_if_debug
-    def listen_once(self, topic: str) -> AxoneStruct:
+    def listen_once(self, topic: str, method: str = "shared_memory") -> AxoneStruct:
         """Listen to a topic once."""
-        return self._listen_once(topic)
+        return self._listen_once(topic, method)
 
     # endregion Subscriber functions
 
     # region Services functions
+
     @property
     def services(self) -> Dict[str, Callable]:
         """Return the node services."""

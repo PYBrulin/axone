@@ -1,7 +1,7 @@
 import logging
 import os
 from functools import wraps
-from multiprocessing import resource_tracker
+from multiprocessing import Lock, resource_tracker
 from multiprocessing.shared_memory import SharedMemory
 from typing import Any, Dict, Optional
 
@@ -29,8 +29,6 @@ def lock(func):
 
 
 class AxoneSharedMemory:
-    _lock = None
-
     def __init__(
         self,
         name: str,
@@ -40,15 +38,7 @@ class AxoneSharedMemory:
     ) -> None:
         super().__init__()
 
-        # # Create lock matching shared memory name
-        # # This is to prevent multiple processes from accessing the same
-        # # lock if they access different shared memory at the same time
-        # self._lock = Lock(
-        #     os.path.join(
-        #         os.path.expanduser("~"),
-        #         f".{name}.axone.lock",
-        #     )
-        # )
+        self._lock = Lock()
 
         # Use the provided struct as itself
         self._struct = struct if struct is not None else AxoneStruct()
@@ -210,6 +200,7 @@ class AxoneSharedMemory:
     def __contains__(self, key: str) -> bool:
         return key in self.struct
 
+    @lock
     def _save_memory(self) -> None:
         data = self._struct.encode()
         if len(data) > self._memory_block._size:
@@ -221,6 +212,7 @@ class AxoneSharedMemory:
         except ValueError as exc:
             raise ValueError(f"exceeds available storage {self._size} > {self._memory_block._size}") from exc
 
+    @lock
     def _read_memory(self) -> Dict[str, Any]:
         try:
             return self._struct.decode(self._memory_block.buf.tobytes())

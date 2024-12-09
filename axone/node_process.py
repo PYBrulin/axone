@@ -120,25 +120,27 @@ class AxoneNodeProcess(AxoneNode):
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
+        method: str = "shared_memory",
     ) -> None:
         """Publish a message to a topic once."""
-        return self._call_function_async("_publish_once", topic=topic, rate=rate)
+        return self._call_function_async("_publish_once", topic=topic, rate=rate, method=method)
 
     def publish_rate(
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
+        method: str = "shared_memory",
     ) -> None:
         """Register a publisher for a topic."""
         # Note: This is indeed calling the "_publish_once" function but with a
         # periodic rate which is used by the server during publication.
-        return self._call_function_async("_publish_once", topic=topic, rate=rate)
+        return self._call_function_async("_publish_once", topic=topic, rate=rate, method=method)
 
     # endregion Publisher functions
 
     # region Subscriber functions
 
-    def subscribe(self, topic_name: str, callback: Callable | None = None) -> None:
+    def subscribe(self, topic_name: str, callback: Callable | None = None, method: str = "shared_memory") -> None:
         """Subscribe to a topic."""
 
         # The objective here is that the NodeProces will subscribe to the
@@ -170,13 +172,10 @@ class AxoneNodeProcess(AxoneNode):
             logging.error(
                 "Subscribe() method cannot accept a callback in the NodeProcess variant. Use listen_once periodically instead."
             )
-        return self._call_function_async("_subscribe", topic_name=topic_name, callback=None)
+        return self._call_function_async("_subscribe", topic_name=topic_name, callback=None, method=method)
 
     @timeit_if_debug
-    def listen_once(
-        self,
-        topic: str,
-    ) -> dict:
+    def listen_once(self, topic: str, method: str = "shared_memory") -> dict:
         """Listen to a topic once."""
 
         # this function differs from the one in the Node class in that it will
@@ -185,13 +184,13 @@ class AxoneNodeProcess(AxoneNode):
 
         # Try to fetch latest data from subscription_queue
         while self._subscription_queue.qsize() > 0:
-            _topic, _struct = self._subscription_queue.get()
+            _topic, _struct, _method = self._subscription_queue.get()
             # Add the received struct to the local subscriptions dict
             logging.debug(f"Adding fetched struct {_topic} to subscriptions")
             self.subscriptions[_topic] = _struct
 
         # Request an update for the topic for the next time
-        self._call_function_async("_listen_once_async", topic=topic)
+        self._call_function_async("_listen_once_async", topic=topic, method=method)
 
         return self.subscriptions.get(topic, AxoneStruct())
 
@@ -231,7 +230,7 @@ class AxoneNodeProcess(AxoneNode):
         return self.subscriptions[topic]._topic
 
     @timeit_if_debug
-    def _listen_once_async(self, topic: str) -> AxoneStruct:
+    def _listen_once_async(self, topic: str, method: str = "shared_memory") -> AxoneStruct:
         """Listen to a topic once."""
         # This variant of the listen_once function is used in the NodeProcess variant
         # to get the AxoneStruct from the shared memory. But, instead of fetching
@@ -247,7 +246,7 @@ class AxoneNodeProcess(AxoneNode):
             # Request a subscription to the topic and go fetch the struct now
             # So that the client gets an answer now (although it will be slow)
             # Create a new subscription
-            self.subscriptions[topic] = Subscription(topic)
+            self.subscriptions[topic] = Subscription(topic, method=method)
             logging.warning(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
             # Fetch the struct now
             # This is a blocking call
@@ -264,7 +263,7 @@ class AxoneNodeProcess(AxoneNode):
 
         # Send the last struct to the parent_conn
         logging.debug(f"Sending fetched struct {topic} to subscription_queue")
-        self._subscription_queue.put((topic, self.subscriptions[topic]._topic))
+        self._subscription_queue.put((topic, self.subscriptions[topic]._topic, method))
 
     # endregion Subscriber functions
 

@@ -463,6 +463,10 @@ class AxoneStruct:
     @timeit_if_debug
     def decode(self, data) -> None:
         """Decode binary data and set attributes accordingly"""
+
+        # Display data size
+        self.__logger__.debug(f"Decoding {len(data)} bytes")
+
         # Create an iterator from the data
         data_iter = iter(data)
 
