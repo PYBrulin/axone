@@ -6,10 +6,10 @@ from typing import Any, Callable, Dict, Optional
 
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import CustomFormatter  # noqa
-from axone.node import AxoneNode
+from axone.node import AxoneNode, ZeroconfNode
 from axone.publisher import Publisher
 from axone.subscriber import Subscription
-from axone.utils import generate_uuid, timeit_if_debug
+from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 
 
 class AxoneNodeProcess(AxoneNode):
@@ -44,6 +44,9 @@ class AxoneNodeProcess(AxoneNode):
         self.name = name
         self.node_id = generate_uuid(self.name)  # Generate a unique node id
         self.kwargs = kwargs
+
+        # Zeroconf parameters
+        self.port = kwargs.get("port", find_free_port())
 
         # Services parameters
         self._services = kwargs.get("services", None)
@@ -297,14 +300,6 @@ class AxoneNodeProcess(AxoneNode):
 
     def start(self):
         """Start the node."""
-        # # Re-initialize the shared logger
-        # global_log_level = logging.getLogger().getEffectiveLevel()
-        # multiprocessing.log_to_stderr(global_log_level)
-        # self.logger = multiprocessing.get_logger()
-        # formatter = CustomFormatter()
-        # for handler in self.logger.handlers:
-        #     handler.setFormatter(formatter)
-
         # Initialize the communication pipes
         # Parent_conn is used to receive data from the process
         # Child_conn is used to send data to the process
@@ -353,25 +348,14 @@ class AxoneNodeProcess(AxoneNode):
 
         logging.info(f"Starting node process for : {self.name}")
 
-        # Create the centralized node
-        self.centralized_node = self.CentralizedNode(self.name, self.node_id, **kwargs)
-        self.centralized_node.advertise()
+        # Create the zeroconf node
+        self.zeroconf_node = ZeroconfNode(self.name, self.node_id, self.port)
+        self.zeroconf_node.advertise()
 
         # services parameters
         self.service_server = None
         self._services = kwargs.get("services", None)
-        # self._hide_services = kwargs.get("hide_services", False)
         self.setup_service_server()
-
-        # Create the "self" node
-        self.self_node = self.SelfNode(
-            name=self.name,
-            node_id=self.node_id,
-            services_names=self.service_server.services_keys if self.service_server is not None else [],
-            services_server_port=self.service_server.server_port if self.service_server is not None else 0,
-            **kwargs,
-        )
-        self.self_node.advertise()
 
         self._last_federation_time = 0  # The time at which the memory was last federated.
 
