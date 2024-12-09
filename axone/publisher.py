@@ -1,12 +1,13 @@
 import logging
-import os
 import socket
 import time
 from multiprocessing.shared_memory import SharedMemory
 from typing import Optional
 
+from zeroconf import ServiceInfo, Zeroconf
+
 from axone.axone_struct import AxoneStruct
-from axone.utils import generate_uuid, timeit_if_debug
+from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 
 
 class Publisher:
@@ -17,6 +18,8 @@ class Publisher:
         rate: float = -1.0,
         source: Optional[str] = None,
         method: str = "shared_memory",
+        publisher_address: str = "224.1.1.1",  # Multicast address for UDP
+        publisher_port: int = 0,  # Publisher port for UDP
     ) -> None:
         # Ensure that the topic is an instance of AxoneStruct or that it has inherited from it
         if not isinstance(topic, AxoneStruct):
@@ -28,7 +31,8 @@ class Publisher:
         self._rate: float = float(rate)
         self._last_update: float = 0
         self._method: str = method
-        self._socket_path: str = f"/tmp/{self._name}_socket"
+        self._publisher_address = publisher_address
+        self._publisher_port = find_free_port() if publisher_port == 0 else publisher_port
 
         self._uuid = generate_uuid(self._name)
 
@@ -54,14 +58,31 @@ class Publisher:
         elif self._method == "socket":
             self._create_socket()
 
+        # Initialize Zeroconf
+        self._zeroconf = Zeroconf()
+        self._register_service()
+
         # TODO : Implement unlink, close, etc for the SHM
 
     def _create_socket(self) -> None:
-        if os.path.exists(self._socket_path):
-            os.remove(self._socket_path)
-        self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self._socket.bind(self._socket_path)
-        logging.debug(f"UDP socket created at {self._socket_path}")
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
+        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+        logging.debug(f"Multicast UDP socket created at {self._publisher_address}:{self._publisher_port}")
+
+    def _register_service(self) -> None:
+        desc = {'name': self._name, 'port': str(self._publisher_port)}
+        info = ServiceInfo(
+            "_axone._udp.local.",
+            f"{self._name}._axone._udp.local.",
+            addresses=[socket.inet_aton(self._publisher_address)],
+            port=self._publisher_port,
+            properties=desc,
+            server=f"{self._publisher_address}.local.",
+        )
+        self._zeroconf.register_service(info)
+        logging.debug(f"Zeroconf service registered for {self._name} at {self._publisher_address}:{self._publisher_port}")
 
     @property
     def topic(self) -> str:
@@ -109,13 +130,15 @@ class Publisher:
         max_retries = 5
         while retries < max_retries:
             try:
-                self._socket.sendto(encoded, self._socket_path)
+                self._socket.sendto(encoded, (self._publisher_address, self._publisher_port))
                 return
             except OSError as e:
-                logging.error(f"Failed to send message to socket {self._socket_path}: {e}")
+                logging.error(f"Failed to send message to socket {self._publisher_address}:{self._publisher_port}: {e}")
                 retries += 1
                 time.sleep(0.1)  # Wait a bit before retrying
-        logging.error(f"Failed to send message to socket {self._socket_path} after {max_retries} attempts")
+        logging.error(
+            f"Failed to send message to socket {self._publisher_address}:{self._publisher_port} after {max_retries} attempts"
+        )
 
     def stop(self) -> None:
         if self._method == "shared_memory":
@@ -125,8 +148,8 @@ class Publisher:
                 self._memory.close()
         elif self._method == "socket":
             self._socket.close()
-            if os.path.exists(self._socket_path):
-                os.remove(self._socket_path)
+        self._zeroconf.unregister_all_services()
+        self._zeroconf.close()
         logging.debug(f"Publisher {self._name} stopped")
 
 
@@ -139,7 +162,7 @@ if __name__ == "__main__":
 
     my_custom_message = ACustomMessage()
 
-    p = Publisher(my_custom_message, 3, method="socket")
+    p = Publisher(my_custom_message, 3, method="socket", publisher_address="224.1.1.1", publisher_port=0)
     print("topic", p.topic)
     print("rate", p.rate)
     print("last_update", p.last_update)

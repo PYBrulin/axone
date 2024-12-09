@@ -1,5 +1,6 @@
 import logging
 import random
+import socket
 import string
 import time
 
@@ -28,6 +29,12 @@ def timeit_if_debug(func):
             return func(*args, **kwargs)
 
     return wrapper
+
+
+def find_free_port() -> int:
+    with socket.socket() as s:
+        s.bind(('', 0))  # Bind to a free port provided by the host OS.
+        return int(s.getsockname()[1])  # Return the port number assigned.
 
 
 if __name__ == "__main__":

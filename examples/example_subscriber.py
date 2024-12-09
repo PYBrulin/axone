@@ -24,7 +24,7 @@ class ExampleNodeSubscriber:
         # Register node
         NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
         self.node = NodeClass(
-            name="example_publisher",
+            name="example_subscriber",
             centralized_memory_endpoint="ExampleNodeMemory",
         )
         self.last_message = None
@@ -51,6 +51,7 @@ class ExampleNodeSubscriber:
 
             while True:
                 time.sleep(1)
+                print("listen_once")
 
                 # Note : when using NodeProcess the callback print is pickled so the last_message is not updated
                 # print("last_message", self.last_message)

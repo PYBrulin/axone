@@ -7,14 +7,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
 
+from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
+from zeroconf._exceptions import NonUniqueNameException
+
 from axone.axone_struct import AxoneStruct, standard_data_decoding, standard_data_encoding
 from axone.publisher import Publisher
 from axone.service_server import ServiceServer, recv_msg, send_msg
 from axone.shared_memory import AxoneSharedMemory
 from axone.subscriber import Subscription
-from axone.utils import generate_uuid, timeit_if_debug
-
-# from axone.subscription import Subscription
+from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 
 DEFAULT_TIMEOUT = 5
 MAX_RETRIES = 10
@@ -22,108 +23,98 @@ TIMESTAMP_PRECISION = 0
 TIMESTAMP_RANGE = 60 * 60 * 24 * 365  # 1 year
 
 
+class ZeroconfListener(ServiceListener):
+    def __init__(self):
+        self.nodes = {}
+
+    def remove_service(self, zeroconf, type, name):
+        logging.info(f"Service {name} removed")
+        if name in self.nodes:
+            del self.nodes[name]
+
+    def add_service(self, zeroconf, type, name):
+        info = zeroconf.get_service_info(type, name)
+        if info:
+            logging.info(f"Service {name} added, service info: {info}")
+            self.nodes[name] = info
+
+    def update_service(self, zeroconf, type, name):
+        info = zeroconf.get_service_info(type, name)
+        if info:
+            logging.info(f"Service {name} updated, service info: {info}")
+            self.nodes[name] = info
+
+
+class ZeroconfNode:
+    def __init__(self, name: str, node_id: str, port: int, **kwargs) -> None:
+        self.node_name = name
+        self.node_id = node_id
+        self.port = port
+        self.zeroconf = Zeroconf()
+        self.listener = ZeroconfListener()
+        self.service_type = "_axone._tcp.local."
+        self.service_name = f"{self.node_name}.{self.service_type}"
+        self.topics = kwargs.get("topics", [])
+        self.info = ServiceInfo(
+            self.service_type,
+            self.service_name,
+            addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
+            port=self.port,
+            properties={"node_id": self.node_id, "topics": ",".join(self.topics)},
+        )
+
+    def advertise(self) -> None:
+        """Advertise the node using zeroconf."""
+        try:
+            self.zeroconf.register_service(self.info)
+            logging.info(f"Node {self.node_name} advertised on zeroconf")
+        except NonUniqueNameException:
+            logging.warning(f"Service name {self.service_name} is not unique. Trying a new name.")
+            self._handle_non_unique_name_exception()
+
+    def _handle_non_unique_name_exception(self) -> None:
+        """Handle NonUniqueNameException by modifying the service name to make it unique."""
+        counter = 1
+        while True:
+            new_service_name = f"{self.node_name}-{counter}.{self.service_type}"
+            new_info = ServiceInfo(
+                self.service_type,
+                new_service_name,
+                addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
+                port=self.port,
+                properties={"node_id": self.node_id, "topics": ",".join(self.topics)},
+            )
+            try:
+                self.zeroconf.register_service(new_info)
+                self.service_name = new_service_name
+                self.info = new_info
+                logging.info(f"Node {self.node_name} advertised with new name {self.service_name} on zeroconf")
+                break
+            except NonUniqueNameException:
+                counter += 1
+
+    def stop_advertising(self) -> None:
+        """Stop advertising the node using zeroconf."""
+        self.zeroconf.unregister_service(self.info)
+        self.zeroconf.close()
+        logging.info(f"Node {self.node_name} stopped advertising on zeroconf")
+
+    def update_topics(self, topics: list[str]) -> None:
+        """Update the topics in the zeroconf properties."""
+        self.topics = topics
+        self.info.properties["topics"] = ",".join(self.topics)
+        self.zeroconf.update_service(self.info)
+        logging.info(f"Updated topics for node {self.node_name} on zeroconf: {self.topics}")
+
+    def discover_nodes(self) -> Dict[str, ServiceInfo]:
+        """Discover nodes using zeroconf."""
+        ServiceBrowser(self.zeroconf, self.service_type, self.listener)
+        time.sleep(2)  # Wait for discovery
+        return self.listener.nodes
+
+
 class AxoneNode:
     logger = logging.getLogger(__name__)
-
-    class CentralizedNode:
-        """
-        class to handle the centralized node
-
-        Updates when the node becomes available or unavailable to the network
-        and provide the list of available nodes when requested
-        """
-
-        def __init__(self, name: str, node_id: str, **kwargs) -> None:
-            self.node_name = name
-            self.node_id = node_id
-
-            self.endpoint = kwargs.get("centralized_memory_endpoint", "")
-            assert self.endpoint != self.node_id, "Memory endpoint cannot be the same as the node id."
-            self.size = kwargs.get("centralized_memory_size", 1024)
-            if self.endpoint == "":
-                raise ValueError("Memory endpoint cannot be empty.")
-
-            self.memory = AxoneSharedMemory(
-                name=generate_uuid(self.endpoint),
-                size=self.size,
-                centralized=True,
-            )
-
-        def advertise(self) -> None:
-            """Advertise the node to the centralized memory."""
-
-            # Check if the node is already registered
-            if self.memory[self.node_id] is not None:
-                logging.warning(f"Node {self.node_name} is already registered.")
-
-            self.memory[self.node_id] = self.node_name
-
-    class SelfNode:
-        """Class to handle the node used to advertise itself
-
-        Updates periodically to advertise itself:
-        - name
-        - timestamp
-        - services
-        - parameters
-        - ? subscriptions
-        """
-
-        class NodeStatus(AxoneStruct):
-            name: str
-            timestamp: float
-            services: list[str]
-            services_server_port: int | str
-            # parameters: Dict[str, Any]
-
-        def __init__(self, name: str, node_id: str, **kwargs) -> None:
-            self.node_name = name
-            self.node_id = node_id
-
-            self.services_names = kwargs.get("services_names", [])  # String representation of the available services
-            self.services_names = ",".join(self.services_names) if self.services_names else ""
-            self.services_server_port = (
-                0 if not self.services_names else kwargs.get("services_server_port", 0)
-            )  # Port to access the services
-
-            self.topics = kwargs.get("topics", [])  # List of topics the node publishes
-
-            self.node_status = self.NodeStatus()
-
-            self.memory = AxoneSharedMemory(
-                name=self.node_id,
-                size=1024,
-                struct=self.node_status,
-                centralized=False,  # Only this node has write access
-            )
-
-        def advertise(self) -> None:
-            """Advertise the node to the centralized memory."""
-            self.memory['name'] = self.node_name
-            self.memory['timestamp'] = time.time()
-            self.memory['services'] = self.services_names
-            self.memory['services_port'] = self.services_server_port
-            # self.memory['parameters'] = {}
-            self.memory['topics'] = self.topics
-
-        def update_timestamp(self) -> None:
-            """Update the timestamp of the node."""
-            self.memory['timestamp'] = time.time()
-
-        def add_topic(self, topic: str) -> None:
-            """Add a topic to the node."""
-            self.topics.append(topic)
-            self.advertise()
-
-        def remove_topic(self, topic: str) -> None:
-            """Remove a topic from the node."""
-            self.topics.remove(topic)
-            self.advertise()
-
-        def update_topics(self, topics: list[str]) -> None:
-            """Update the topics of the node."""
-            self.topics = topics
-            self.advertise()
 
     def __init__(self, name: str, **kwargs) -> None:
         """Initialize a node for the Axone framework."""
@@ -148,83 +139,53 @@ class AxoneNode:
         if self.name == "":
             raise ValueError("Node name cannot be empty.")
 
-        # Create the centralized node
-        self.centralized_node = self.CentralizedNode(self.name, self.node_id, **kwargs)
-        self.centralized_node.advertise()
+        # Zeroconf parameters
+        self.port = kwargs.get("port", find_free_port())
+
+        # Create the zeroconf node
+        self.zeroconf_node = ZeroconfNode(self.name, self.node_id, self.port)
+        self.zeroconf_node.advertise()
 
         # Services parameters
         self.service_server = None
         self._services = kwargs.get("services", None)
-        # self._hide_services = kwargs.get("hide_services", False)
         self.setup_service_server()
 
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
         self._subscriptions: Dict[str, Subscription] = {}
 
-        # Create the "self" node
-        self.self_node = self.SelfNode(
-            name=self.name,
-            node_id=self.node_id,
-            services_names=self.service_server.services_keys if self.service_server is not None else [],
-            services_server_port=self.service_server.server_port if self.service_server is not None else 0,
-            **kwargs,
-        )
-        self.self_node.advertise()
-
         self._last_federation_time = 0  # The time at which the memory was last federated.
 
     # region Common functions
+
     @property
     def _timestamp(self) -> int | float:
         return time.time()
-        # return self.get_timestamp()
-
-    def get_timestamp(self) -> int | float:
-        """Output a formatted timestamp."""
-        # TODO:Limit the range of the timestamp.
-        # TODO:Currently Assume that the timestamp can not be older than 1 year.
-        # TODO:This will prevent the timestamp from taking too much space in the memory.
-        # Idea base the timestamp on the oldest node in the memory.
-        # And reduce the floating point precision to 3 digits
-        return round(
-            time.time(),  # TODO: % self._timestamp_range,
-            (
-                TIMESTAMP_PRECISION if TIMESTAMP_PRECISION > 0 else None
-            ),  # Note: If ndigits is None round() converts to int directly
-        )
 
     def list_nodes(self) -> list[str]:
-        """
-        List all the attributes in the centralized memory.
-        This is really simple as the centralized memory only contains the nodes ID and names.
-        """
-        return self._list_nodes()
-
-    def _list_nodes(self) -> list[str]:
-        return self.centralized_node.memory.struct.list_instance_attributes()
+        """List all the nodes discovered using zeroconf."""
+        nodes = self.zeroconf_node.discover_nodes()
+        return list(nodes.keys())
 
     def find_node_by_name(self, name: str) -> Optional[str]:
         """Search a node by name"""
-        return self._find_node_by_name(name)
-
-    def _find_node_by_name(self, name: str) -> Optional[str]:
-        return self.centralized_node.memory.struct.list_instance_attributes().get(generate_uuid(name), None)
+        nodes = self.zeroconf_node.discover_nodes()
+        for node_name, info in nodes.items():
+            if node_name == name:
+                return info.properties.get("node_id")
+        return None
 
     def get_node_configuration(self, name: str):
         """Get the configuration of a node."""
-        return self._get_node_configuration(name)
-
-    def _get_node_configuration(self, name: str):
-        node = self._find_node_by_name(name)
-        if node is None:
+        node_id = self.find_node_by_name(name)
+        if node_id is None:
             logging.debug(f"Node {name} does not exist.")
             return None
 
         # Connect to the requested node memory
         try:
-            with AxoneSharedMemory(name=generate_uuid(node), centralized=False) as node_memory:
-                # Check if the node as the attribute services
+            with AxoneSharedMemory(name=node_id, centralized=False) as node_memory:
                 logging.debug(f"Node {name} has the attribute services.")
                 return node_memory.struct.list_instance_attributes()
         except ValueError:
@@ -233,48 +194,26 @@ class AxoneNode:
 
     def list_node_services(self, name: str):
         """List the services available for a node."""
-        return self._list_node_services(name)
-
-    def _list_node_services(self, name: str):
-        # print("_list_node_services")
-        node_struct = self._get_node_configuration(name)
+        node_struct = self.get_node_configuration(name)
         if node_struct is None:
             return None
         return node_struct.get("services", None)
 
     def get_node_services_server_port(self, name: str):
         """List the services available for a node."""
-        return self._get_node_services_server_port(name)
-
-    def _get_node_services_server_port(self, name: str):
-        node_struct = self._get_node_configuration(name)
-        # print(name, node_struct)
+        node_struct = self.get_node_configuration(name)
         if node_struct is None:
             return None
         return node_struct.get("services_port", None)
 
     def is_node_advertising_services(self, name: str) -> bool:
         """Check if a node is advertising services."""
-        return self._is_node_advertising_services(name)
-
-    def _is_node_advertising_services(self, name: str) -> bool:
-        services = self._list_node_services(name)
+        services = self.list_node_services(name)
         return services is not None and services != ""
-
-    # def _is_service_advertised(self, node_id: str, service: str) -> bool:
-    #     """Check if an service is advertised by a node."""
-    #     return self._memory.get("__nds", {}).get(node_id, {}).get("__s", {}).get(service, {}) != {}
-
-    # def is_service_advertised(self, node_id: str, service: str) -> bool:
-    #     """Check if an service is advertised by a node."""
-    #     return self._is_service_advertised(node_id, service)
 
     def get_node_topics(self, name: str) -> list[str]:
         """List the topics available for a node."""
-        return self._get_node_topics(name)
-
-    def _get_node_topics(self, name: str) -> list[str]:
-        node_struct = self._get_node_configuration(name)
+        node_struct = self.get_node_configuration(name)
         if node_struct is None:
             return []
         return node_struct.get("topics", [])
@@ -292,7 +231,6 @@ class AxoneNode:
     def publishers(self, publishers: Dict[str, Publisher]) -> None:
         """Set the node publishers."""
         self._publishers = publishers
-        # self.kwargs["publishers"] = publishers
 
     def publish_rate(
         self,
@@ -305,6 +243,7 @@ class AxoneNode:
         topic_name = topic.__class__.__name__
         self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id, method=method)
         logging.debug(f"Registered publisher {topic_name} at rate {rate} using {method}.")
+        self.update_zeroconf_topics()
 
     def _publish_once(
         self,
@@ -317,7 +256,7 @@ class AxoneNode:
         # Check if the topic is registered
         if topic_name not in self.publishers:
             self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id, method=method)
-            self.self_node.add_topic(topic_name)
+            self.update_zeroconf_topics()
 
         # Publish the message
         self.publishers[topic_name].publish(topic)
@@ -348,6 +287,11 @@ class AxoneNode:
                     self.publishers[topic].topic,
                     self.publishers[topic].rate,
                 )
+
+    def update_zeroconf_topics(self) -> None:
+        """Update the topics in the zeroconf properties."""
+        topics = {name: pub._publisher_port for name, pub in self.publishers.items()}
+        self.zeroconf_node.update_topics(topics)
 
     # endregion Publisher functions
 
@@ -386,7 +330,6 @@ class AxoneNode:
                 continue
 
             # Check if it is time to listen
-            # TODO: Limit rate if the topic is not published
             if time.time() - self.subscriptions[topic_name].last_timestamp > float(1 / self.subscriptions[topic_name].rate):
                 topic_struct = self._listen_for_topic(topic_name)
                 if topic_struct is not None:
@@ -402,7 +345,11 @@ class AxoneNode:
 
     def _listen_once(self, topic: str, method: str = "shared_memory") -> AxoneStruct:
         """Listen to a topic once."""
-        sub = Subscription(topic, method=method)
+        if topic not in self.subscriptions:
+            sub = Subscription(topic, method=method)
+            self.subscriptions[topic] = sub
+        else:
+            sub = self.subscriptions[topic]
         sub.subscribe()
         return sub._topic
 
@@ -437,18 +384,9 @@ class AxoneNode:
         dest_node_id: Optional[str] = None,
         dest_node_name: Optional[str] = None,
         service_name: str = None,
-        # answer: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Call an service on a node."""
-        # Check if the service is available
-        # We need to check if the node is available first, otherwise the service
-        #  buffer will get congested with inexistent service calls
-        # Note: This fnction used to check if the service was registered on the
-        #  destination node. However, it is now possible to hide services from
-        #  the memory. Therefore, the destination node will be the only one
-        #  responsible for checking if the service is available or not.
-
+        """Call a service on a node."""
         if dest_node_id is None and dest_node_name is None:
             self.logger.error("Either dest_node_id or dest_node_name must be specified.")
             return
@@ -460,21 +398,19 @@ class AxoneNode:
             self.logger.error("Service name must be specified.")
             return
 
-        services_advertised = self._list_node_services(dest_node_name)
+        services_advertised = self.list_node_services(dest_node_name)
         if services_advertised is None:
             self.logger.error(f"Node {dest_node_name} is not advertising any services.")
             return
 
         if service_name not in services_advertised:
-            # service is not available
-            # No need to call the service
             self.logger.warning(
                 f"No service with name {service_name} has been advertised by "
                 + f"node {dest_node_id} to call. However, the node might "
                 + "be hiding its services. The call will be made anyway."
             )
 
-        server_port = self._get_node_services_server_port(dest_node_name)
+        server_port = self.get_node_services_server_port(dest_node_name)
 
         if sys.platform != 'win32':
             family = socket.AF_UNIX
@@ -519,15 +455,13 @@ class AxoneNode:
         dest_node_id: Optional[str] = None,
         dest_node_name: Optional[str] = None,
         service_name: Optional[str] = None,
-        # answer: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Call an service on a node."""
+        """Call a service on a node."""
         self._call_service(
             dest_node_id=dest_node_id,
             dest_node_name=dest_node_name,
             service_name=service_name,
-            # answer=answer,
             **kwargs,
         )
 
@@ -551,11 +485,8 @@ class AxoneNode:
         # Wait for the server to stop
         self._executor.shutdown(wait=True)
 
-        # Unregister the node from the centralized memory
-        self.centralized_node.memory[self.node_id] = None
-
-        # Unregister the node from the self memory
-        self.self_node.memory.cleanup()
+        # Stop advertising the node
+        self.zeroconf_node.stop_advertising()
 
         # Cleanup the publishers and subscribers of this node
         for publisher in self.publishers.values():
@@ -579,19 +510,6 @@ class AxoneNode:
         logging.info("Node server stopped")
 
     def _server_exec(self) -> None:
-        # if time.time() - self._last_federation_time > 1:
-        #     # logging.debug("Update execution")
-        #     # TODO: Group this in a dedicated function
-        #     self._last_federation_time = time.time()
-
-        #     # TODO:
-        #     # self.self_node.update_timestamp()
-
-        # if self.services is not None:
-        #     if time.time() - self._last_services_time > self.service_server_rate:
-        #         self._last_services_time = time.time()
-        #         self._listen_service()
-
         if self.subscriptions:
             self._listen_subscriptions()
 
