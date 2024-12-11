@@ -236,7 +236,7 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "shared_memory",
+        method: str = "socket",
     ) -> None:
         """Register a publisher for a topic."""
         # Create a new publisher
@@ -249,7 +249,7 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "shared_memory",
+        method: str = "socket",
     ) -> None:
         """Publish a message once on a topic."""
         topic_name = topic.__class__.__name__
@@ -266,7 +266,7 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "shared_memory",
+        method: str = "socket",
     ) -> None:
         """Publish a message on a topic."""
         self._publish_once(
@@ -306,11 +306,11 @@ class AxoneNode:
         """Set the node subscriptions."""
         self._subscriptions = subscriptions
 
-    def subscribe(self, topic_name: str, callback: Callable, method: str = "shared_memory") -> None:
+    def subscribe(self, topic_name: str, callback: Callable, method: str = "socket") -> None:
         """Subscribe to a topic."""
         return self._subscribe(topic_name, callback, method)
 
-    def _subscribe(self, topic_name: str, callback: Callable, method: str = "shared_memory") -> None:
+    def _subscribe(self, topic_name: str, callback: Callable, method: str = "socket") -> None:
         # Add the callback to the list of callbacks for this topic
         if topic_name not in list(self.subscriptions):
             # Create a new subscription
@@ -343,18 +343,18 @@ class AxoneNode:
         self.subscriptions[topic_name].subscribe()
         return self.subscriptions[topic_name]._topic
 
-    def _listen_once(self, topic: str, method: str = "shared_memory") -> AxoneStruct:
+    def _listen_once(self, topic: str, method: str = "socket") -> AxoneStruct:
         """Listen to a topic once."""
         if topic not in self.subscriptions:
             sub = Subscription(topic, method=method)
             self.subscriptions[topic] = sub
+            sub.subscribe()
         else:
             sub = self.subscriptions[topic]
-        sub.subscribe()
         return sub._topic
 
     @timeit_if_debug
-    def listen_once(self, topic: str, method: str = "shared_memory") -> AxoneStruct:
+    def listen_once(self, topic: str, method: str = "socket") -> AxoneStruct:
         """Listen to a topic once."""
         return self._listen_once(topic, method)
 
@@ -510,8 +510,8 @@ class AxoneNode:
         logging.info("Node server stopped")
 
     def _server_exec(self) -> None:
-        if self.subscriptions:
-            self._listen_subscriptions()
+        # if self.subscriptions:
+        #     self._listen_subscriptions()
 
         if self.publishers:
             self._publish_loop()

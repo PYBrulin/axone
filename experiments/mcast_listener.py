@@ -1,8 +1,9 @@
+import logging
 import socket
 import struct
 
 
-def udp_multicast_listener(multicast_group: str, port: int):
+def udp_multicast_listener(multicast_group: str, port: int, interface_ip: str = '0.0.0.0'):
     # Create a UDP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
@@ -10,20 +11,21 @@ def udp_multicast_listener(multicast_group: str, port: int):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     # Bind the socket to the port
-    sock.bind(('', port))
+    sock.bind((interface_ip, port))
 
-    # Tell the kernel that we want to join the multicast group
+    # Tell the kernel that we want to join the multicast group on the specified interface
     group = socket.inet_aton(multicast_group)
-    mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+    mreq = struct.pack('4s4s', group, socket.inet_aton(interface_ip))
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
-    print(f"Listening on multicast group {multicast_group}:{port}")
+    logging.info(f"Listening on multicast group {multicast_group}:{port} on interface {interface_ip}")
 
     while True:
         # Receive data from the socket
         data, addr = sock.recvfrom(1024)  # Buffer size is 1024 bytes
-        print(f"Received message: {data} from {addr}")
+        logging.info(f"Received message: {data.decode('utf-8')} from {addr}")
 
 
 if __name__ == "__main__":
-    udp_multicast_listener("224.1.1.1", 48053)
+    logging.basicConfig(level=logging.INFO)
+    udp_multicast_listener("224.1.1.1", 5007, "0.0.0.0")

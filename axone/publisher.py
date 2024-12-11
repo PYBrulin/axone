@@ -17,7 +17,7 @@ class Publisher:
         topic: AxoneStruct,
         rate: float = -1.0,
         source: Optional[str] = None,
-        method: str = "shared_memory",
+        method: str = "socket",
         publisher_address: str = "224.1.1.1",  # Multicast address for UDP
         publisher_port: int = 0,  # Publisher port for UDP
     ) -> None:

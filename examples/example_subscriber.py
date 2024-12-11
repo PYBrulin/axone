@@ -35,8 +35,7 @@ class ExampleNodeSubscriber:
         print(topic_struct.get("message"))
 
     def print_callback(self, topic_struct: AxoneStruct) -> None:
-        print(topic_struct.get("message_string"))
-        print(topic_struct.get("message_callback"))
+        print(topic_struct.get("message_callback"), topic_struct.get("message_string"))
 
     def run(self) -> NoReturn:
         try:
@@ -52,6 +51,7 @@ class ExampleNodeSubscriber:
             while True:
                 time.sleep(1)
                 print("listen_once")
+                print(self.node.subscriptions)
 
                 # Note : when using NodeProcess the callback print is pickled so the last_message is not updated
                 # print("last_message", self.last_message)
