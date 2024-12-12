@@ -31,7 +31,7 @@ class ConfigFileNode:
 
         print("Node registered")
         print("Node name:", self.node.name)
-        print("Node memory endpoint:", self.node.centralized_node.endpoint)
+        # print("Node memory endpoint:", self.node.centralized_node.endpoint)
 
     def run(self) -> NoReturn:
         try:

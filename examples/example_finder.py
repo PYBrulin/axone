@@ -22,7 +22,6 @@ class ExampleNodeFinder:
 
     def run(self) -> NoReturn:
         try:
-
             # Note start the node after registering the subscribers
             # Which is a requirement for the NodeProcess variant
             self.node.start()

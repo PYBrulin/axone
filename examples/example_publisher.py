@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import random
 import time
 from typing import NoReturn
@@ -46,6 +47,10 @@ class ExampleNodePublisher:
         self.node = NodeClass(
             name="example_publisher",
             centralized_memory_endpoint="ExampleNodeMemory",
+            config_file=os.path.join(
+                os.path.dirname(__file__),
+                "axone.json",
+            ),  # Here we load a config file next to this script
         )
 
     def run(self) -> NoReturn:

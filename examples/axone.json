@@ -1,4 +1,8 @@
 {
     "centralized_memory_endpoint": "ExampleNodeMemory",
-    "centralized_memory_size": 8192
+    "centralized_memory_size": 8192,
+    "default_publisher_port_range": [
+        45001,
+        50000
+    ]
 }

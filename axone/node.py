@@ -155,7 +155,9 @@ class AxoneNode:
         self._publishers: Dict[str, Publisher] = {}
         self._subscriptions: Dict[str, Subscription] = {}
 
-        self._last_federation_time = 0  # The time at which the memory was last federated.
+        # Default publisher parameters
+        self.default_publisher_address = kwargs.get("default_publisher_address", "224.1.1.1")
+        self.default_publisher_port_range = kwargs.get("default_publisher_port_range", (40000, 45000))
 
     # region Common functions
 
@@ -237,11 +239,29 @@ class AxoneNode:
         topic: AxoneStruct,
         rate: float = -1.0,
         method: str = "socket",
+        publisher_address: Optional[str] = None,
+        publisher_port: int = 0,
+        publisher_port_range: Optional[tuple] = None,
     ) -> None:
         """Register a publisher for a topic."""
+
+        # Use instance variables if parameters are None
+        if publisher_address is None:
+            publisher_address = self.default_publisher_address
+        if publisher_port_range is None:
+            publisher_port_range = self.default_publisher_port_range
+
         # Create a new publisher
         topic_name = topic.__class__.__name__
-        self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id, method=method)
+        self.publishers[topic_name] = Publisher(
+            topic,
+            rate=rate,
+            source=self.node_id,
+            method=method,
+            publisher_address=publisher_address,
+            publisher_port=publisher_port,
+            publisher_port_range=publisher_port_range,
+        )
         logging.debug(f"Registered publisher {topic_name} at rate {rate} using {method}.")
         self.update_zeroconf_topics()
 
@@ -250,12 +270,30 @@ class AxoneNode:
         topic: AxoneStruct,
         rate: float = -1.0,
         method: str = "socket",
+        publisher_address: Optional[str] = None,
+        publisher_port: int = 0,
+        publisher_port_range: Optional[tuple] = None,
     ) -> None:
         """Publish a message once on a topic."""
+
+        # Use instance variables if parameters are None
+        if publisher_address is None:
+            publisher_address = self.default_publisher_address
+        if publisher_port_range is None:
+            publisher_port_range = self.default_publisher_port_range
+
         topic_name = topic.__class__.__name__
         # Check if the topic is registered
         if topic_name not in self.publishers:
-            self.publishers[topic_name] = Publisher(topic, rate=rate, source=self.node_id, method=method)
+            self.publishers[topic_name] = Publisher(
+                topic,
+                rate=rate,
+                source=self.node_id,
+                method=method,
+                publisher_address=publisher_address,
+                publisher_port=publisher_port,
+                publisher_port_range=publisher_port_range,
+            )
             self.update_zeroconf_topics()
 
         # Publish the message
@@ -267,12 +305,25 @@ class AxoneNode:
         topic: AxoneStruct,
         rate: float = -1.0,
         method: str = "socket",
+        publisher_address: Optional[str] = None,
+        publisher_port: int = 0,
+        publisher_port_range: Optional[tuple] = None,
     ) -> None:
         """Publish a message on a topic."""
+
+        # Use instance variables if parameters are None
+        if publisher_address is None:
+            publisher_address = self.default_publisher_address
+        if publisher_port_range is None:
+            publisher_port_range = self.default_publisher_port_range
+
         self._publish_once(
             topic,
             rate,
             method,
+            publisher_address=publisher_address,
+            publisher_port=publisher_port,
+            publisher_port_range=publisher_port_range,
         )
 
     def _publish_loop(self) -> None:
