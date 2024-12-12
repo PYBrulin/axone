@@ -87,7 +87,7 @@ class ExampleNodePublisher:
 
                 counter += 1
 
-                time.sleep(1)
+                time.sleep(0.05)
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")

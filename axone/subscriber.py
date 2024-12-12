@@ -203,6 +203,7 @@ class Subscription:
             encoded = self._subscribe_socket_with_retries()
 
         if encoded:
+            logging.debug(f"Received message from {self._name}:{encoded}")
             self._topic.decode(encoded)
             self._timestamp = self._topic.timestamp_
             self._new_message = self._timestamp != self._last_timestamp

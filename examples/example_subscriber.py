@@ -48,15 +48,31 @@ class ExampleNodeSubscriber:
                 self.node.subscribe("ARatedTopic", callback=self.print_message, method=self.method)
                 self.node.subscribe("ARatedCallbackTopic", callback=self.print_callback, method=self.method)
 
+            index = 0
             while True:
-                time.sleep(1)
+                time.sleep(0.1)
                 print("listen_once")
                 print(self.node.subscriptions)
 
                 # Note : when using NodeProcess the callback print is pickled so the last_message is not updated
                 # print("last_message", self.last_message)
                 # However, it is possible to get the last message from the shared memory using listen_once
-                print(self.node.listen_once("AStandaloneTopic", method=self.method))
+                msg = self.node.listen_once("AStandaloneTopic", method=self.method)
+
+                if msg.get("message"):
+                    print(msg)
+                    _index = int(msg["message"].split(" ")[-1])
+
+                    if _index == index:
+                        print("Node has stopped publishing")
+                        exit(1)
+                    else:
+                        index = _index
+                else:
+                    print("NO MESSAGE")
+
+                print("INDEX", index)
+
                 if self.use_process:
                     print(self.node.listen_once("ARatedTopic", method=self.method))
                     print(self.node.listen_once("ARatedCallbackTopic", method=self.method))

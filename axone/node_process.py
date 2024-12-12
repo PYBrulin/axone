@@ -62,7 +62,14 @@ class AxoneNodeProcess(AxoneNode):
         """Call a function on the node."""
         try:
             logging.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
-            self._parent_conn.send((function_name, args, kwargs))
+            # Send the task to the process
+            # args:
+            #   sync: True if the task is synchronous
+            #   function_name: the name of the function to call
+            #   args: the arguments to pass to the function
+            #   kwargs: the keyword arguments to pass to the function
+            self._parent_conn.send((True, function_name, args, kwargs))
+            logging.debug(f"Sent task: {function_name} with args={args}, kwargs={kwargs}")
             return self._parent_conn.recv()
         except AttributeError:
             logging.error(f"Cannot call function {function_name} until the node has started.")
@@ -73,7 +80,14 @@ class AxoneNodeProcess(AxoneNode):
         """Call a function on the node and exit without waiting for a return."""
         try:
             logging.debug(f"Calling function {function_name} with args={args}, kwargs={kwargs}")
-            self._parent_conn.send((function_name, args, kwargs))
+            # Send the task to the process
+            # args:
+            #   sync: False if the task is asynchronous
+            #   function_name: the name of the function to call
+            #   args: the arguments to pass to the function
+            #   kwargs: the keyword arguments to pass to the function
+            self._parent_conn.send((False, function_name, args, kwargs))
+            logging.debug(f"Sent task: {function_name} with args={args}, kwargs={kwargs}")
             # No return expected here
         except AttributeError:
             logging.error(f"Cannot call function {function_name} until the node has started.")
@@ -192,7 +206,7 @@ class AxoneNodeProcess(AxoneNode):
             logging.debug(f"Adding fetched struct {_topic} to subscriptions")
             self.subscriptions[_topic] = _struct
 
-        # Request an update for the topic for the next time
+        # Request an update of the topic for the next time
         self._call_function_async("_listen_once_async", topic=topic, method=method)
 
         return self.subscriptions.get(topic, AxoneStruct())
@@ -250,7 +264,7 @@ class AxoneNodeProcess(AxoneNode):
             # So that the client gets an answer now (although it will be slow)
             # Create a new subscription
             self.subscriptions[topic] = Subscription(topic, method=method)
-            logging.warning(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
+            logging.info(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
             # Fetch the struct now
             # This is a blocking call
             self.subscriptions[topic].subscribe()
@@ -379,23 +393,32 @@ class AxoneNodeProcess(AxoneNode):
         self._executor.join()
 
     def _server_process(self, child_conn) -> None:
+        # _counter = 0  # DEBUG TO BE REMOVED
         while True:
-            # Check if there's a task to be executed from the child_conn endpoint
-            if child_conn.poll():
-                task = child_conn.recv()
-                function_name, args, kwargs = task
-                # Map the function name to the actual function
-                # Needed to avoid pickling the function itself
-                # which is forbidden
-                try:
-                    function = getattr(self, f'{function_name}')
-                    result = function(*args, **kwargs)
-                    logging.debug(f"Result: {result}")
-                    child_conn.send(result)
-                except AttributeError:
-                    logging.error(f"Function {function_name} possibly does not exist.", exc_info=True)
-            else:
-                # Handle the case where there's nothing to receive
-                pass
+            try:
+                # Check if there's a task to be executed from the child_conn endpoint
+                if child_conn.poll(1 / 10):  # Poll with a timeout of 1 second
+                    # _counter += 1  # DEBUG TO BE REMOVED
+                    # print(f"Server process loop {_counter}")  # DEBUG TO BE REMOVED
+                    task = child_conn.recv()
+                    sync, function_name, args, kwargs = task
+                    logging.debug(f"Received task: {function_name} with args={args}, kwargs={kwargs}")
+                    # Map the function name to the actual function
+                    # Needed to avoid pickling the function itself
+                    # which is forbidden
+                    try:
+                        function = getattr(self, function_name)
+                        result = function(*args, **kwargs)
+                        logging.debug(f"Result: {result}")
+                        if sync:  # If the task is synchronous, send the result back...
+                            child_conn.send(result)
+                        # ...else, the task is asynchronous and we don't need to send a result
+                    except AttributeError:
+                        logging.error(f"Function {function_name} does not exist.", exc_info=True)
+                else:
+                    # Handle the case where there's nothing to receive
+                    logging.debug("No task to execute, continuing loop")
+            except Exception as e:
+                logging.error(f"Error in server process loop: {e}", exc_info=True)
 
             self._server_exec()
