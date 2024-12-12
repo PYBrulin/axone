@@ -14,9 +14,10 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "filelock",
     "crc",
-    'portalocker ; platform_system == "Windows"'
+    "filelock",
+    'portalocker ; platform_system == "Windows"',
+    "zeroconf",
 ]
 
 [build-system]
