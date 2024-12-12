@@ -20,6 +20,7 @@ class Publisher:
         method: str = "socket",
         publisher_address: str = "224.1.1.1",  # Multicast address for UDP
         publisher_port: int = 0,  # Publisher port for UDP
+        publisher_port_range: tuple = (40000, 45000),  # Range of ports for UDP
     ) -> None:
         # Ensure that the topic is an instance of AxoneStruct or that it has inherited from it
         if not isinstance(topic, AxoneStruct):
@@ -32,7 +33,8 @@ class Publisher:
         self._last_update: float = 0
         self._method: str = method
         self._publisher_address = publisher_address
-        self._publisher_port = find_free_port() if publisher_port == 0 else publisher_port
+        self._publisher_port_range = publisher_port_range
+        self._publisher_port = find_free_port(self._publisher_port_range) if publisher_port == 0 else publisher_port
 
         self._uuid = generate_uuid(self._name)
 

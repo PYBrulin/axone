@@ -3,6 +3,7 @@ import random
 import socket
 import string
 import time
+from typing import Optional, Tuple
 
 
 def generate_uuid(input_string: str) -> str:
@@ -31,10 +32,26 @@ def timeit_if_debug(func):
     return wrapper
 
 
-def find_free_port() -> int:
-    with socket.socket() as s:
-        s.bind(('', 0))  # Bind to a free port provided by the host OS.
-        return int(s.getsockname()[1])  # Return the port number assigned.
+def find_free_port(port_range: Optional[Tuple[int, int]] = None) -> int:
+    """Find a free port on the host OS within the specified range.
+
+    Args:
+        port_range (Tuple[int, int], optional): The range where to find the available
+            port. No restriction if set to None. Defaults to None.
+
+    Returns:
+        int: Selected port number.
+    """
+    _port_range = range(1024, 65535)  # Default range for dynamic ports.
+    if port_range is not None:
+        _port_range = range(port_range[0], port_range[1] + 1)
+
+    ret = 0
+    while ret not in _port_range:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.bind(('', 0))  # Bind to a free port provided by the host OS.
+            ret = int(s.getsockname()[1])  # Return the port number assigned.
+    return ret
 
 
 if __name__ == "__main__":
