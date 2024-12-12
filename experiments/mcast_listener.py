@@ -1,6 +1,7 @@
 import logging
 import socket
 import struct
+import sys
 
 
 def udp_multicast_listener(multicast_group: str, port: int, interface_ip: str = '0.0.0.0'):
@@ -23,9 +24,9 @@ def udp_multicast_listener(multicast_group: str, port: int, interface_ip: str = 
     while True:
         # Receive data from the socket
         data, addr = sock.recvfrom(1024)  # Buffer size is 1024 bytes
-        logging.info(f"Received message: {data.decode('utf-8')} from {addr}")
+        logging.info(f"Received message from {addr}: {data}")
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    udp_multicast_listener("224.1.1.1", 5007, "0.0.0.0")
+    udp_multicast_listener("224.1.1.1", int(sys.argv[1]) if len(sys.argv) > 1 else 5007, "0.0.0.0")

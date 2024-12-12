@@ -117,8 +117,8 @@ class Publisher:
         self._topic.source_ = self._source
         self._topic.rate_ = self._rate
         self._topic.timestamp_ = time.time()
-        logging.debug(f"Topic {self._topic}")
         encoded = self._topic.encode()
+        logging.debug(f"{len(encoded)} bytes encoded for topic {self._name}")
 
         if self._method == "shared_memory":
             self._memory.buf[: len(encoded)] = bytes(encoded)
@@ -131,6 +131,7 @@ class Publisher:
         while retries < max_retries:
             try:
                 self._socket.sendto(encoded, (self._publisher_address, self._publisher_port))
+                logging.debug(f"Message sent to socket {self._publisher_address}:{self._publisher_port}")
                 return
             except OSError as e:
                 logging.error(f"Failed to send message to socket {self._publisher_address}:{self._publisher_port}: {e}")
