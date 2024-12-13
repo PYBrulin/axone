@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
 
+import netifaces
 from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
 from zeroconf._exceptions import NonUniqueNameException
 
@@ -46,20 +47,22 @@ class ZeroconfListener(ServiceListener):
 
 
 class ZeroconfNode:
-    def __init__(self, name: str, node_id: str, port: int, **kwargs) -> None:
+    def __init__(self, name: str, node_id: str, port: int, interface: str = "lo", **kwargs) -> None:
         self.node_name = name
         self.node_id = node_id
-        self.port = port
+        self.service_port = port
         self.zeroconf = Zeroconf()
         self.listener = ZeroconfListener()
         self.service_type = "_axone._tcp.local."
         self.service_name = f"{self.node_name}.{self.service_type}"
+        self.interface = interface
         self.topics = kwargs.get("topics", [])
+        new_ip_address = self._get_ip_address(self.interface)
         self.info = ServiceInfo(
             self.service_type,
             self.service_name,
-            addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
-            port=self.port,
+            addresses=[socket.inet_aton(new_ip_address)],
+            port=self.service_port,
             properties={"node_id": self.node_id, "topics": ",".join(self.topics)},
         )
 
@@ -72,16 +75,24 @@ class ZeroconfNode:
             logging.warning(f"Service name {self.service_name} is not unique. Trying a new name.")
             self._handle_non_unique_name_exception()
 
+    def _get_ip_address(self, interface: str) -> str:
+        """Get the IP address of a specific network interface."""
+        logging.debug(f"Getting IP address for interface {interface}")
+        addresses = netifaces.ifaddresses(interface)
+        logging.debug(f"Addresses: {addresses}")
+        return addresses[netifaces.AF_INET][0]['addr']
+
     def _handle_non_unique_name_exception(self) -> None:
         """Handle NonUniqueNameException by modifying the service name to make it unique."""
         counter = 1
         while True:
             new_service_name = f"{self.node_name}-{counter}.{self.service_type}"
+            new_ip_address = self._get_ip_address(self.interface)
             new_info = ServiceInfo(
                 self.service_type,
                 new_service_name,
-                addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
-                port=self.port,
+                addresses=[socket.inet_aton(new_ip_address)],
+                port=self.service_port,
                 properties={"node_id": self.node_id, "topics": ",".join(self.topics)},
             )
             try:
@@ -102,7 +113,8 @@ class ZeroconfNode:
     def update_topics(self, topics: list[str]) -> None:
         """Update the topics in the zeroconf properties."""
         self.topics = topics
-        self.info.properties["topics"] = ",".join(self.topics)
+        self.info.properties["topics"] = ",".join(self.topics).encode("utf-8")
+        logging.info(f"Updating service with new topics: {self.info.properties['topics']}")
         self.zeroconf.update_service(self.info)
         logging.info(f"Updated topics for node {self.node_name} on zeroconf: {self.topics}")
 
@@ -135,15 +147,29 @@ class AxoneNode:
         self.name = name
         self.node_id = generate_uuid(self.name)  # Generate a unique node id
 
+        # Default publisher parameters
+        self.default_publisher_interface = kwargs.get("default_publisher_interface", "lo")
+        if self.default_publisher_interface not in netifaces.interfaces():
+            logging.error(f"Network interface '{self.default_publisher_interface}' does not exist. Defaulting to 'lo'")
+            self.default_publisher_interface = "lo"
+        self.default_publisher_address = kwargs.get("default_publisher_address", "224.1.1.1")
+        self.default_publisher_port_range = kwargs.get("default_publisher_port_range", (40000, 45000))
+
         # Check for required parameters
         if self.name == "":
             raise ValueError("Node name cannot be empty.")
 
         # Zeroconf parameters
-        self.port = kwargs.get("port", find_free_port())
+        self.service_port = kwargs.get("port", find_free_port())
 
         # Create the zeroconf node
-        self.zeroconf_node = ZeroconfNode(self.name, self.node_id, self.port)
+        self.zeroconf_node = ZeroconfNode(
+            name=self.name,
+            node_id=self.node_id,
+            port=self.service_port,
+            interface=self.default_publisher_interface,
+            **kwargs,
+        )
         self.zeroconf_node.advertise()
 
         # Services parameters
@@ -154,10 +180,6 @@ class AxoneNode:
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
         self._subscriptions: Dict[str, Subscription] = {}
-
-        # Default publisher parameters
-        self.default_publisher_address = kwargs.get("default_publisher_address", "224.1.1.1")
-        self.default_publisher_port_range = kwargs.get("default_publisher_port_range", (40000, 45000))
 
     # region Common functions
 
@@ -239,6 +261,7 @@ class AxoneNode:
         topic: AxoneStruct,
         rate: float = -1.0,
         method: str = "socket",
+        publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
         publisher_port_range: Optional[tuple] = None,
@@ -246,6 +269,8 @@ class AxoneNode:
         """Register a publisher for a topic."""
 
         # Use instance variables if parameters are None
+        if publisher_interface is None:
+            publisher_interface = self.default_publisher_interface
         if publisher_address is None:
             publisher_address = self.default_publisher_address
         if publisher_port_range is None:
@@ -258,6 +283,7 @@ class AxoneNode:
             rate=rate,
             source=self.node_id,
             method=method,
+            publisher_interface=publisher_interface,
             publisher_address=publisher_address,
             publisher_port=publisher_port,
             publisher_port_range=publisher_port_range,
@@ -270,6 +296,7 @@ class AxoneNode:
         topic: AxoneStruct,
         rate: float = -1.0,
         method: str = "socket",
+        publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
         publisher_port_range: Optional[tuple] = None,
@@ -277,6 +304,8 @@ class AxoneNode:
         """Publish a message once on a topic."""
 
         # Use instance variables if parameters are None
+        if publisher_interface is None:
+            publisher_interface = self.default_publisher_interface
         if publisher_address is None:
             publisher_address = self.default_publisher_address
         if publisher_port_range is None:
@@ -290,6 +319,7 @@ class AxoneNode:
                 rate=rate,
                 source=self.node_id,
                 method=method,
+                publisher_interface=publisher_interface,
                 publisher_address=publisher_address,
                 publisher_port=publisher_port,
                 publisher_port_range=publisher_port_range,
@@ -305,6 +335,7 @@ class AxoneNode:
         topic: AxoneStruct,
         rate: float = -1.0,
         method: str = "socket",
+        publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
         publisher_port_range: Optional[tuple] = None,
@@ -312,6 +343,8 @@ class AxoneNode:
         """Publish a message on a topic."""
 
         # Use instance variables if parameters are None
+        if publisher_interface is None:
+            publisher_interface = self.default_publisher_interface
         if publisher_address is None:
             publisher_address = self.default_publisher_address
         if publisher_port_range is None:
@@ -321,6 +354,7 @@ class AxoneNode:
             topic,
             rate,
             method,
+            publisher_interface=publisher_interface,
             publisher_address=publisher_address,
             publisher_port=publisher_port,
             publisher_port_range=publisher_port_range,

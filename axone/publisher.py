@@ -4,6 +4,7 @@ import time
 from multiprocessing.shared_memory import SharedMemory
 from typing import Optional
 
+import netifaces
 from zeroconf import ServiceInfo, Zeroconf
 
 from axone.axone_struct import AxoneStruct
@@ -18,6 +19,7 @@ class Publisher:
         rate: float = -1.0,
         source: Optional[str] = None,
         method: str = "socket",
+        publisher_interface: str = "lo",  # Network interface for UDP
         publisher_address: str = "224.1.1.1",  # Multicast address for UDP
         publisher_port: int = 0,  # Publisher port for UDP
         publisher_port_range: tuple = (40000, 45000),  # Range of ports for UDP
@@ -32,9 +34,15 @@ class Publisher:
         self._rate: float = float(rate)
         self._last_update: float = 0
         self._method: str = method
+        self._publisher_interface = publisher_interface
         self._publisher_address = publisher_address
         self._publisher_port_range = publisher_port_range
         self._publisher_port = find_free_port(self._publisher_port_range) if publisher_port == 0 else publisher_port
+
+        # Check if the network interface exists
+        if self._publisher_interface not in netifaces.interfaces():
+            logging.error(f"Network interface '{self._publisher_interface}' does not exist. Defaulting to 'lo'")
+            self._publisher_interface = "lo"
 
         self._uuid = generate_uuid(self._name)
 
@@ -73,8 +81,20 @@ class Publisher:
         self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
         logging.debug(f"Multicast UDP socket created at {self._publisher_address}:{self._publisher_port}")
 
+    def _get_ip_address(self, interface: str) -> str:
+        """Get the IP address of a specific network interface."""
+        addresses = netifaces.ifaddresses(interface)
+        return addresses[netifaces.AF_INET][0]['addr']
+
     def _register_service(self) -> None:
-        desc = {'name': self._name, 'port': str(self._publisher_port)}
+        ip_address = self._get_ip_address(self._publisher_interface)
+        desc = {
+            'name': self._name,
+            'port': str(self._publisher_port),
+            'ip_address': ip_address,
+            "publisher": self._source,
+            "rate": str(self._rate),
+        }
         info = ServiceInfo(
             "_axone._udp.local.",
             f"{self._name}._axone._udp.local.",

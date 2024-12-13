@@ -39,6 +39,7 @@ class Subscription:
         self._max_retries = max_retries
         self._multicast_group = multicast_group
         self._multicast_port = 0
+        self._multicast_interface_ip = ""
         self._joined_multicast = False  # Flag to indicate if multicast group is joined
         self._timeout = timeout
         self._stop_event = threading.Event()
@@ -84,15 +85,36 @@ class Subscription:
         if info and info.properties.get(b'name').decode('utf-8') == self._name:
             new_multicast_group = socket.inet_ntoa(info.addresses[0])
             new_multicast_port = info.port
+            new_multicast_ip_address = (
+                info.properties.get(b'ip_address').decode('utf-8') if b'ip_address' in info.properties else None
+            )
+            # source = info.properties.get(b'source').decode('utf-8') if b'source' in info.properties else None
+            # rate = float(info.properties.get(b'rate').decode('utf-8')) if b'rate' in info.properties else None
+
             logging.info(
-                f"Service {name} at {new_multicast_group}:{new_multicast_port} "
+                f"Service {name} at {new_multicast_ip_address}:{new_multicast_port} "
                 + f"{'added' if state_change == ServiceStateChange.Added else 'updated'}"
             )
             if self._method == "socket":
-                if new_multicast_group != self._multicast_group or new_multicast_port != self._multicast_port:
+                if (
+                    new_multicast_group != self._multicast_group
+                    or new_multicast_port != self._multicast_port
+                    or self.get_local_ip_for_target(new_multicast_ip_address) != self._multicast_interface_ip
+                ):
                     self._multicast_group = new_multicast_group
                     self._multicast_port = new_multicast_port
+                    self._multicast_interface_ip = self.get_local_ip_for_target(new_multicast_ip_address)
                 self._restart_socket()
+
+    def get_local_ip_for_target(self, target_ip: str) -> str:
+        """Get the local IP address that can communicate with the target IP."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as temp_socket:
+                temp_socket.connect((target_ip, 1))
+                local_ip = temp_socket.getsockname()[0]
+            return local_ip
+        except Exception as e:
+            raise RuntimeError(f"Cannot determine local IP address for target {target_ip}: {e}")
 
     def _handle_service_removed(self, zeroconf, service_type, name):
         """Handle service removed state."""
@@ -132,15 +154,23 @@ class Subscription:
             return
         if self._socket:
             self._socket.close()
+
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socket.settimeout(self._timeout)
         self._socket.bind(('', self._multicast_port))
 
-        group = socket.inet_aton(self._multicast_group)
-        mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+        # mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+        mreq = struct.pack(
+            '4s4s',
+            socket.inet_aton(self._multicast_group),
+            socket.inet_aton(self._multicast_interface_ip) if self._multicast_interface_ip else socket.INADDR_ANY,
+        )
         self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        logging.info(f"Joined multicast group {self._multicast_group} on port {self._multicast_port}")
+        logging.info(
+            f"Listening on multicast group '{self._multicast_group}:{self._multicast_port}' "
+            + f"on interface {self._multicast_interface_ip}"
+        )
         self._joined_multicast = True
 
     @property
