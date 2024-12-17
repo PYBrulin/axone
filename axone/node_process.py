@@ -4,6 +4,8 @@ import multiprocessing
 import os
 from typing import Any, Callable, Dict, Optional
 
+import netifaces
+
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import CustomFormatter  # noqa
 from axone.node import AxoneNode, ZeroconfNode
@@ -45,8 +47,16 @@ class AxoneNodeProcess(AxoneNode):
         self.node_id = generate_uuid(self.name)  # Generate a unique node id
         self.kwargs = kwargs
 
+        # Default publisher parameters
+        self.default_publisher_interface = kwargs.get("default_publisher_interface", "lo")
+        if self.default_publisher_interface not in netifaces.interfaces():
+            logging.error(f"Network interface '{self.default_publisher_interface}' does not exist. Defaulting to 'lo'")
+            self.default_publisher_interface = "lo"
+        self.default_publisher_address = kwargs.get("default_publisher_address", "224.1.1.1")
+        self.default_publisher_port_range = kwargs.get("default_publisher_port_range", (40000, 45000))
+
         # Zeroconf parameters
-        self.port = kwargs.get("port", find_free_port())
+        self.service_port = kwargs.get("port", find_free_port())
 
         # Services parameters
         self._services = kwargs.get("services", None)
@@ -363,7 +373,13 @@ class AxoneNodeProcess(AxoneNode):
         logging.info(f"Starting node process for : {self.name}")
 
         # Create the zeroconf node
-        self.zeroconf_node = ZeroconfNode(self.name, self.node_id, self.port)
+        self.zeroconf_node = ZeroconfNode(
+            name=self.name,
+            node_id=self.node_id,
+            port=self.service_port,
+            interface=self.default_publisher_interface,
+            **kwargs,
+        )
         self.zeroconf_node.advertise()
 
         # services parameters
