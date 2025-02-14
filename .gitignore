@@ -84,3 +84,10 @@ dmypy.json
 
 # others
 .vscode/
+
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
