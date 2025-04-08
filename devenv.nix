@@ -11,6 +11,8 @@
         netifaces
         portalocker ; platform_system == "Windows"
         zeroconf
+        pytest
+        pytest-benchmark
         . # This package
       '';
     };
