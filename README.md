@@ -2,13 +2,14 @@
 
 [![Build](https://github.com/PYBrulin/axone/actions/workflows/pywheels.yaml/badge.svg)](https://github.com/PYBrulin/axone/actions/workflows/pywheels.yaml)
 
-Axone is a ROS-like framework for distributed computing on a local system implemented in pure-Python. It is designed to be used in a multi-process environment by using a shared memory for communication between nodes. No outside communication is supported at this time.
+Axone is a ROS-like framework for distributed computing on a local system implemented in pure-Python. It is designed to be used in a multi-process environment by using a **UDP multicast sockets** or **shared memories** for communication between nodes. Outside communication is supported using UDP sockets.
+The package is designed to be lightweight and easy to use, making it suitable for various applications, including robotics, data processing, and distributed systems.
 
-The package provide basic functionalities similar to ROS, such as:
+The package provides basic functionalities similar to ROS, such as:
 
-- Publisher/Subscriber: A node can publish data to a topic, and other nodes can subscribe to this topic to receive the data.
-- Service/Client: A node can provide a service, and other nodes can call this service.
-- (WIP) Parameter server: A node can store parameters on the parameter server, and other nodes can retrieve them.
+- **Publisher/Subscriber**: A node can publish data to a topic, and other nodes can subscribe to this topic to receive the data.
+- **Service/Client**: A node can provide a service, and other nodes can call this service.
+- **Parameter Server (WIP)**: A node can store parameters on the parameter server, and other nodes can retrieve them.
 
 > axon, portion of a nerve cell (neuron) that carries nerve impulses away from the cell body. A neuron typically has one axon that connects it with other neurons or with muscle or gland cells.
 >
@@ -22,7 +23,7 @@ Axone can be installed locally using pip:
 pip install -e .
 ```
 
-or using the provided wheel in the [release](https://github.com/PYBrulin/axone/releases) section:
+Alternatively, you can use the provided wheel in the [release](https://github.com/PYBrulin/axone/releases) section:
 
 ```bash
 pip install axone-[latest-version]-py3-none-any.whl
@@ -30,11 +31,10 @@ pip install axone-[latest-version]-py3-none-any.whl
 
 ## Hybrid Federated Architecture
 
-Axone nodes are designed to be run on a local system and interact on both a **decentralized** and **centralized** manner through shared memories.
+Axone nodes are designed to be run on a local system and interact in both a **decentralized** and **centralized** manner through shared memories.
 
-All nodes are connected to a centralized shared memory space, which is used to inform all nodes of the existence of other nodes. This shared memory space is used to store the list of nodes and their respective shared memory endpoints. The shared memory space is created by the first node that uses it, and it is accessible by all nodes that use the same common endpoint address.
-
-Each node has its own shared memory space, which is used to specify the topics it publishes, the services it provides and its parameters. This shared memory space is created by the node itself and is accessible by all other nodes through standard API calls.
+- **Centralized Shared Memory**: All nodes are connected to a centralized shared memory space or sub-network, which is used to inform all nodes of the existence of other nodes. This shared memory space stores the list of nodes and their respective shared memory endpoints. When using UDP multicast sockets, the discovery of nodes is done using zeroconf, which is a service discovery protocol that allows nodes to find each other on the network. The centralized shared memory space is used to inform all nodes of the existence of other nodes and their respective shared memory endpoints.
+- **Node-Specific Shared Memory**: Each node has its own shared memory space, which is used to specify the topics it publishes, the services it provides, and its parameters. In the case of a node using UDP multicast sockets, information about the topics and services is contained in the zeroconf service discovery protocol.
 
 ```mermaid
 ---
@@ -78,37 +78,36 @@ For more information on shared memory, see the [Python documentation](https://do
 from axone.node import Node
 
 node = Node(
-    name="example_node", # Name of the node
-    centralized_memory_endpoint="ExampleNodeMemory", # Name of the shared memory
-    memory_size=4096, # Size of the shared memory
+    name="example_node",  # Name of the node
+    centralized_memory_endpoint="ExampleNodeMemory",  # Name of the shared memory
+    memory_size=4096,  # Size of the shared memory
+    default_publisher_interface="lo",  # The network interface to use for the publisher if sockets are used
+    default_publisher_address="239.255.0.1" # The multicast address to use for the publisher if sockets are used
+    default_publisher_port_range=(45001, 50000),  # The range of ports to use for the publishers
 )
 ```
 
-Note that for multiple nodes, it is also possible to load the network configuration from a file using the `load_network` method of the `Node` class. The method takes the path to the network configuration file as an argument. The network configuration file must be a JSON file with the following structure:
-
-The JSON file defining the network configuration. Only the `memory_endpoint` and `memory_size` keys are required.
+You can also load the network configuration from a JSON file using the `config_file` argument:
 
 ```json
 {
-  "centralized_memory_endpoint": "ExampleNodeMemory",
-  "centralized_memory_endpoint": 8192 // Not required
+  "centralized_memory_endpoint": "ExampleNodeMemory", // Name of the shared memory network endpoint
+  "centralized_memory_size": 8192, // Size of the shared memory network endpoint
+  "default_publisher_port_range": [45001, 50000], // The range of ports to use for the publishers
+  "default_publisher_interface": "lo" // The network interface to use for the publisher if sockets are used
 }
 ```
 
-The Python code to load the network configuration from the JSON file.
-
 ```python
-from axone.node import Node
-
 node = Node(
-    name="example_node", # Name of the node
-    config_file="axone.json", # The above JSON file
+    name="example_node",
+    config_file="axone.json",  # Path to the JSON configuration file
 )
 ```
 
 ### AxoneStruct
 
-`AxoneStruct` are objects that can be passed between nodes. They are similar to a dictionary and are serializable following the _struct_ definition. The `AxoneStruct` class is used to ensure that the data passed between nodes is serializable and can be passed between processes. The `AxoneStruct` class is a subclass of the `dict` class and can be filled with any base python type.
+`AxoneStruct` objects are serializable structures that can be passed between nodes. They behave like dictionaries and ensure compatibility for inter-process communication.
 
 ```python
 from axone.axone_struct import AxoneStruct
@@ -118,7 +117,7 @@ class SubMessage(AxoneStruct):
     y: float = 1.2
     z: str = "34"
 
-class ATopicPassedToAxone(AxoneTopic):
+class ATopicPassedToAxone(AxoneStruct):
     a: bool = True
     b: int = 0
     c: int = 1
@@ -127,7 +126,7 @@ class ATopicPassedToAxone(AxoneTopic):
     f: float = 1e9
     g: float = 0.00001357
     h: str = "hello"
-    time: float = time.time  # a callable whose return value is stored
+    time: float = time.time  # Callable whose return value is stored
     xyz: SubMessage = SubMessage()
 ```
 
@@ -147,7 +146,9 @@ classDiagram
     example_publisher --> example_subscriber : ARatedTopic\n(rate = 3 Hz)
 ```
 
-A publisher can be created using the `publish_rate` or `publish_once` methods of a node. Each method takes an AxoneStruct structure to publish and a rate (optional for `publish_once`).
+#### Publisher
+
+A publisher can be created using the `publish_rate` or `publish_once` methods of a node. Publishers can send data at a specified rate or just once.
 
 It is possible to pass a function as the message, in which case the function will be called at the rate specified by the `rate` argument. The function must return a subclass of an `AxoneStruct` object, which acts in a similar way of a dict and is serializable following the _struct_ definition. The `rate` argument is the rate at which the message will be published in Hz. A rate of -1 will publish the message only once.
 
@@ -168,10 +169,7 @@ class ARatedCallbackTopic(AxoneTopic):
 class AStandaloneTopic(AxoneTopic):
     message: str = "I am a message that is eventually going to be overwritten by the node. bye."
 
-node = AxoneNode(
-    name="example_publisher",
-    centralized_memory_endpoint="ExampleNodeMemory",
-)
+node = AxoneNode(name="example_publisher")
 node.start()
 
 # Register a rated publisher
@@ -188,16 +186,15 @@ while True:
     time.sleep(1)
 ```
 
+#### Subscriber
+
 A subscriber can be created using the `subscribe` method of a node. The method takes the name of the topic to subscribe to, and a callable callback function that will be called when a message is received. The callback function must take a single argument, which will be the received message. Parsing of the message should be handled by the callback function.
 
 ```python
 from axone.node import AxoneNode
 from axone.axone_struct import AxoneStruct
 
-node = AxoneNode(
-    name="example_subscriber",
-    centralized_memory_endpoint="ExampleNodeMemory",
-)
+node = AxoneNode(name="example_subscriber")
 
 def print_message(topic_struct: AxoneStruct) -> None:
     print(topic_struct.get("message"))
@@ -239,7 +236,9 @@ classDiagram
     example_performer ..|> example_actuator : move_response(xy=x+y,yz=y+z,zx=z+X)
 ```
 
-A list of services or services can be registered by a node during initialization. The list of services is passed as a dictionary to the `services` argument of the `Node` constructor. The dictionary must have the service name as the key or be passed a callable function directly. The value of each key must be a dictionary with the name of the arguments as the key and the type of the argument as the value. The callable function must take a single argument, which will be the request message.
+Nodes can provide services that other nodes can call. Services are registered during node initialization.
+
+The list of services is passed as a dictionary to the `services` argument of the `Node` constructor. The dictionary must have the service name as the key or be passed a callable function directly. The value of each key must be a dictionary with the name of the arguments as the key and the type of the argument as the value. The callable function must take a single argument, which will be the request message.
 
 ```python
 from axone.node import Node
@@ -254,8 +253,7 @@ def move(message):
 
 node = Node(
     name="example_performer",
-    memory_endpoint="ExampleNodeMemory",
-    memory_size=4096,
+    ...,
     services={
         display: {
             "message": "str",
@@ -271,14 +269,12 @@ node = Node(
 
 A service can be called using the `call_service` method of a node. The method takes the name of the service to call, the name of the service to call, and the arguments to pass to the service directly as keyword arguments.
 
+To call a service:
+
 ```python
 from axone.node import Node
 
-node = Node(
-    name="example_actuator",
-    memory_endpoint="ExampleNodeMemory",
-    memory_size=4096,
-)
+node = Node(name="example_actuator", ...)
 node.call_service(dest_node=target_node, service="move", x=1, y=2, z=3)
 ```
 
@@ -286,7 +282,7 @@ An answer can be returned by a service, but is not required. The answer must be 
 If an answer is expected, the argument `answer` can be passed to the `call_service` method.
 The `answer` argument accept either a string matching the service name, or directly the callable function to call. The callable function must already be registered as an service on the client node and must take the same arguments as the response message will have. On the service side, the answer will be returned on the service named after `answer`. If no `answer` argument is passed, but the service still returns an answer, the answer will be ignored. For an example of this, see the `example_actuator` and `example_performer` nodes in the `examples` folder which implement a simple request/response service over the request `move` and the response `move_response`.
 
-### Parameter server
+### Parameter Server
 
 ```mermaid
 ---
@@ -311,8 +307,7 @@ from axone.node import Node
 x = y = z = 0
 node = Node(
     name="example_performer",
-    memory_endpoint="ExampleNodeMemory",
-    memory_size=4096,
+    ...,
     parameters={
         "x": x,
         "y": y,
@@ -321,10 +316,25 @@ node = Node(
 )
 ```
 
+### Standalone Process
+
+Nodes can run in standalone processes to optimize memory management. However, callbacks and service answers are not supported in this mode.
+
+```mermaid
+sequenceDiagram
+App->>Node: An action
+activate Node
+Node->>Lock: Acquire lock
+activate Lock
+Lock-->>Node: Lock released
+deactivate Lock
+Node-->>App: An answer
+deactivate Node
+```
+
 ### Examples
 
-The `examples` folder contains a few examples of nodes that can be run using the `axone` command.
-When running all `example_*.py` files, the following communication graph is created:
+The `examples` folder contains sample nodes demonstrating Axone's capabilities. When running all `example_*.py` files, the following communication graph is created:
 
 ```mermaid
 ---
@@ -335,7 +345,7 @@ classDiagram
     class example_publisher
     class example_subscriber
     class example_actuator{
-        +move_reponse(xy, yz, zx)
+        +move_response(xy, yz, zx)
     }
     class example_performer{
         +x
