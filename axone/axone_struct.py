@@ -9,7 +9,7 @@ from axone.utils import timeit_if_debug
 BYTES_PER_INT = struct.calcsize('i')  # TODO: Change to numpy dtypes
 
 
-def call_value(value, instance=None):
+def call_value(value, instance=None) -> Any:
     if callable(value):
         if inspect.isbuiltin(value):
             # Handle built-in functions here
@@ -219,7 +219,7 @@ class AxoneStruct:
     __blacklist_methods__ = ["encode", "decode", "update", "get_approximate_size", "list_instance_attributes", "get"]
 
     # Create a logger for this class
-    __logger__ = logging.getLogger(__name__ + ".AxoneStruct")
+    __logger__ = logging.getLogger("AxoneStruct")
     __logger__.setLevel(logging.WARNING)
 
     def __init__(self) -> None:

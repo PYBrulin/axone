@@ -2,31 +2,11 @@ import logging
 import socket
 import time
 
-from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
+from zeroconf import ServiceBrowser, Zeroconf
+
+from axone.node import ZeroconfListener
 
 logging.basicConfig(level=logging.INFO)
-
-
-class ZeroconfListener(ServiceListener):
-    def __init__(self):
-        self.nodes = {}
-
-    def remove_service(self, zeroconf, type, name):
-        logging.info(f"Service {name} removed")
-        if name in self.nodes:
-            del self.nodes[name]
-
-    def add_service(self, zeroconf, type, name):
-        info = zeroconf.get_service_info(type, name)
-        if info:
-            logging.info(f"Service {name} added, service info: {info}")
-            self.nodes[name] = info
-
-    def update_service(self, zeroconf, type, name):
-        info = zeroconf.get_service_info(type, name)
-        if info:
-            logging.info(f"Service {name} updated, service info: {info}")
-            self.nodes[name] = info
 
 
 def main():
@@ -47,7 +27,7 @@ def main():
                 for name, info in listener.nodes.items():
                     if name.endswith("._axone._tcp.local."):
                         print(
-                            f" {name},"
+                            f"{info.port} - {name}\n\t"
                             + f" Address: {socket.inet_ntoa(info.addresses[0])},"
                             + f" Port: {info.port}, Properties: {info.properties}"
                         )
@@ -55,7 +35,7 @@ def main():
                 for name, info in listener.nodes.items():
                     if name.endswith("._axone._udp.local."):
                         print(
-                            f" {name},"
+                            f"{info.port} - {name}\n\t"
                             + f" Address: {socket.inet_ntoa(info.addresses[0])},"
                             + f" Port: {info.port}, Properties: {info.properties}"
                         )

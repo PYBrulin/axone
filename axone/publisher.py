@@ -13,6 +13,7 @@ from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 
 
 class Publisher:
+    __logger__ = logging.getLogger("Publisher")
 
     def __init__(
         self,
@@ -44,6 +45,10 @@ class Publisher:
         if self._publisher_interface not in netifaces.interfaces():
             logging.error(f"Network interface '{self._publisher_interface}' does not exist. Defaulting to 'lo'")
             self._publisher_interface = "lo"
+            self._publisher_address = "239.255.0.1"
+
+        self._interface_ip = self._get_ip_address(self._publisher_interface)
+        logging.debug(f"Publisher interface IP address: {self._interface_ip}")
 
         self._uuid = generate_uuid(self._name)
 
@@ -53,19 +58,7 @@ class Publisher:
         self._topic.timestamp_ = time.time()
 
         if self._method == Method.SHARED_MEMORY:
-            # Create a shared memory for the topic
-            self.has_created_shared_memory = False
-            try:
-                self._memory = SharedMemory(
-                    name=self._uuid,
-                    create=True,
-                    size=topic.get_approximate_size(),
-                )
-                self.has_created_shared_memory = True
-            except FileExistsError:
-                logging.warning(f"Shared memory {self._uuid} already exists")
-                # Try to open the shared memory if it already exists
-                self._memory = SharedMemory(name=self._uuid, create=False)
+            self._create_shared_memory(topic)
         elif self._method == Method.SOCKET:
             self._create_socket()
 
@@ -75,10 +68,26 @@ class Publisher:
 
         # TODO : Implement unlink, close, etc for the SHM
 
+    def _create_shared_memory(self, topic: AxoneStruct) -> None:
+        # Create a shared memory for the topic
+        self.has_created_shared_memory = False
+        try:
+            self._memory = SharedMemory(
+                name=self._uuid,
+                create=True,
+                size=topic.get_approximate_size(),
+            )
+            self.has_created_shared_memory = True
+        except FileExistsError:
+            logging.warning(f"Shared memory {self._uuid} already exists")
+            # Try to open the shared memory if it already exists
+            self._memory = SharedMemory(name=self._uuid, create=False)
+
     def _create_socket(self) -> None:
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
+        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self._interface_ip))
         self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
         logging.debug(f"Multicast UDP socket created at {self._publisher_address}:{self._publisher_port}")
 
@@ -88,11 +97,10 @@ class Publisher:
         return addresses[netifaces.AF_INET][0]['addr']
 
     def _register_service(self) -> None:
-        ip_address = self._get_ip_address(self._publisher_interface)
         desc = {
             'name': self._name,
             'port': str(self._publisher_port),
-            'ip_address': ip_address,
+            'ip_address': self._interface_ip,
             "publisher": self._source,
             "rate": str(self._rate),
         }

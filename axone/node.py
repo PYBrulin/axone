@@ -26,21 +26,21 @@ TIMESTAMP_RANGE = 60 * 60 * 24 * 365  # 1 year
 
 
 class ZeroconfListener(ServiceListener):
-    def __init__(self):
+    def __init__(self) -> None:
         self.nodes = {}
 
-    def remove_service(self, zeroconf, type, name):
+    def remove_service(self, zeroconf, type, name) -> None:
         logging.info(f"Service {name} removed")
         if name in self.nodes:
             del self.nodes[name]
 
-    def add_service(self, zeroconf, type, name):
+    def add_service(self, zeroconf, type, name) -> None:
         info = zeroconf.get_service_info(type, name)
         if info:
             logging.info(f"Service {name} added, service info: {info}")
             self.nodes[name] = info
 
-    def update_service(self, zeroconf, type, name):
+    def update_service(self, zeroconf, type, name) -> None:
         info = zeroconf.get_service_info(type, name)
         if info:
             logging.info(f"Service {name} updated, service info: {info}")
@@ -153,7 +153,10 @@ class AxoneNode:
         if self.default_publisher_interface not in netifaces.interfaces():
             logging.error(f"Network interface '{self.default_publisher_interface}' does not exist. Defaulting to 'lo'")
             self.default_publisher_interface = "lo"
-        self.default_publisher_address = kwargs.get("default_publisher_address", "224.1.1.1")
+        self.default_publisher_address = kwargs.get(
+            "default_publisher_address",
+            "224.1.1.1" if self.default_publisher_interface != "lo" else "239.255.0.1",
+        )
         self.default_publisher_port_range = kwargs.get("default_publisher_port_range", (40000, 45000))
 
         # Check for required parameters

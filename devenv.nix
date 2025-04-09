@@ -13,7 +13,7 @@
         zeroconf
         pytest
         pytest-benchmark
-        . # This package
+        -e . # This package
       '';
     };
   };

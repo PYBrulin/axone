@@ -5,5 +5,5 @@
         45001,
         50000
     ],
-    "default_publisher_interface": "enp3s0"
+    "default_publisher_interface": "lo"
 }

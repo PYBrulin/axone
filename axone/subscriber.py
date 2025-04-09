@@ -14,6 +14,8 @@ from axone.utils import generate_uuid
 
 
 class Subscription:
+    __logger__ = logging.getLogger("Subscription")
+
     def __init__(
         self,
         topic_name: str = "",

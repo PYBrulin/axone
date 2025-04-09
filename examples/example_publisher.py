@@ -42,7 +42,7 @@ class ExampleNodePublisher:
     def __init__(self, use_process: bool = False, use_socket: bool = False) -> None:
         self.use_process = use_process
         self.use_socket = use_socket
-        self.method = Method.SHARED_MEMORY if not self.use_socket else Method.SOCKET
+        self.method = Method.SOCKET if self.use_socket else Method.SHARED_MEMORY
         # Register node
         NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
         self.node = NodeClass(
@@ -88,7 +88,7 @@ class ExampleNodePublisher:
 
                 counter += 1
 
-                time.sleep(0.05)
+                time.sleep(0.1)
 
         except KeyboardInterrupt:
             print("KeyboardInterrupt")
