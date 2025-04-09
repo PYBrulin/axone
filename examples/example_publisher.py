@@ -7,6 +7,7 @@ from typing import NoReturn
 
 from axone.axone_struct import AxoneTopic
 from axone.custom_logger import setup_logger
+from axone.enums import Method
 from axone.node import AxoneNode
 from axone.node_process import AxoneNodeProcess
 
@@ -41,7 +42,7 @@ class ExampleNodePublisher:
     def __init__(self, use_process: bool = False, use_socket: bool = False) -> None:
         self.use_process = use_process
         self.use_socket = use_socket
-        self.method = "shared_memory" if not self.use_socket else "socket"
+        self.method = Method.SHARED_MEMORY if not self.use_socket else Method.SOCKET
         # Register node
         NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
         self.node = NodeClass(

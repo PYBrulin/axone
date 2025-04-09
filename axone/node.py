@@ -12,6 +12,7 @@ from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
 from zeroconf._exceptions import NonUniqueNameException
 
 from axone.axone_struct import AxoneStruct, standard_data_decoding, standard_data_encoding
+from axone.enums import Method
 from axone.publisher import Publisher
 from axone.service_server import ServiceServer, recv_msg, send_msg
 from axone.shared_memory import AxoneSharedMemory
@@ -260,7 +261,7 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "socket",
+        method: Method = Method.SOCKET,
         publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
@@ -295,7 +296,7 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "socket",
+        method: Method = Method.SOCKET,
         publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
@@ -334,7 +335,7 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "socket",
+        method: Method = Method.SOCKET,
         publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
@@ -391,11 +392,11 @@ class AxoneNode:
         """Set the node subscriptions."""
         self._subscriptions = subscriptions
 
-    def subscribe(self, topic_name: str, callback: Callable, method: str = "socket") -> None:
+    def subscribe(self, topic_name: str, callback: Callable, method: Method = Method.SOCKET) -> None:
         """Subscribe to a topic."""
         return self._subscribe(topic_name, callback, method)
 
-    def _subscribe(self, topic_name: str, callback: Callable, method: str = "socket") -> None:
+    def _subscribe(self, topic_name: str, callback: Callable, method: Method = Method.SOCKET) -> None:
         # Add the callback to the list of callbacks for this topic
         if topic_name not in list(self.subscriptions):
             # Create a new subscription
@@ -428,7 +429,7 @@ class AxoneNode:
         self.subscriptions[topic_name].subscribe()
         return self.subscriptions[topic_name]._topic
 
-    def _listen_once(self, topic: str, method: str = "socket") -> AxoneStruct:
+    def _listen_once(self, topic: str, method: Method = Method.SOCKET) -> AxoneStruct:
         """Listen to a topic once."""
         if topic not in self.subscriptions:
             sub = Subscription(topic, method=method)
@@ -439,7 +440,7 @@ class AxoneNode:
         return sub._topic
 
     @timeit_if_debug
-    def listen_once(self, topic: str, method: str = "socket") -> AxoneStruct:
+    def listen_once(self, topic: str, method: Method = Method.SOCKET) -> AxoneStruct:
         """Listen to a topic once."""
         return self._listen_once(topic, method)
 

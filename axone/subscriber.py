@@ -9,6 +9,7 @@ from typing import Any, Callable, List, Optional
 from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
 
 from axone.axone_struct import AxoneStruct
+from axone.enums import Method
 from axone.utils import generate_uuid
 
 
@@ -17,7 +18,7 @@ class Subscription:
         self,
         topic_name: str = "",
         rate: float = 1.0,
-        method: str = "socket",
+        method: Method = Method.SOCKET,
         retry_interval: float = 5.0,  # Retry interval in seconds
         max_retries: int = 10,  # Maximum number of retries
         multicast_group: str = "224.1.1.1",  # Multicast group address
@@ -47,7 +48,7 @@ class Subscription:
         self._zeroconf = Zeroconf()
         self._service_browser = ServiceBrowser(self._zeroconf, "_axone._udp.local.", handlers=[self._on_service_state_change])
 
-        if self._method == "shared_memory":
+        if self._method == Method.SHARED_MEMORY:
             self._connect_shared_memory()
 
     def _connect_shared_memory(self) -> None:
@@ -95,7 +96,7 @@ class Subscription:
                 f"Service {name} at {new_multicast_ip_address}:{new_multicast_port} "
                 + f"{'added' if state_change == ServiceStateChange.Added else 'updated'}"
             )
-            if self._method == "socket":
+            if self._method == Method.SOCKET:
                 if (
                     new_multicast_group != self._multicast_group
                     or new_multicast_port != self._multicast_port
@@ -227,9 +228,9 @@ class Subscription:
         # print(f"Subscribing to {self._name}")
         self._last_timestamp = time.time()
 
-        if self._method == "shared_memory":
+        if self._method == Method.SHARED_MEMORY:
             encoded = self._subscribe_shared_memory()
-        elif self._method == "socket":
+        elif self._method == Method.SOCKET:
             encoded = self._subscribe_socket_with_retries()
 
         if encoded:
@@ -283,12 +284,12 @@ class Subscription:
     def stop(self) -> None:
         """Stop the subscription."""
         self._stop_event.set()
-        if self._method == "shared_memory" and self._memory is not None:
+        if self._method == Method.SHARED_MEMORY and self._memory is not None:
             try:
                 self._memory.close()
             except FileNotFoundError:
                 logging.error(f"Shared memory {self._uuid} not found")
-        elif self._method == "socket" and self._socket is not None:
+        elif self._method == Method.SOCKET and self._socket is not None:
             self._socket.close()
         self._zeroconf.close()
         logging.debug(f"Subscription {self._name} deleted")

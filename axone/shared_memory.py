@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import setup_logger
+from axone.enums import Method
 
 NOT_GIVEN = object()
 
@@ -88,21 +89,21 @@ class AxoneSharedMemory:
         # TODO: shared_memory and the lock as well.
 
         def fix_register(name, rtype) -> Any | None:
-            if rtype == "shared_memory":
+            if rtype == Method.SHARED_MEMORY:
                 return
             return resource_tracker._resource_tracker.register(self, name, rtype)
 
         resource_tracker.register = fix_register
 
         def fix_unregister(name, rtype) -> Any | None:
-            if rtype == "shared_memory":
+            if rtype == Method.SHARED_MEMORY:
                 return
             return resource_tracker._resource_tracker.unregister(self, name, rtype)
 
         resource_tracker.unregister = fix_unregister
 
-        if "shared_memory" in resource_tracker._CLEANUP_FUNCS:
-            del resource_tracker._CLEANUP_FUNCS["shared_memory"]
+        if Method.SHARED_MEMORY in resource_tracker._CLEANUP_FUNCS:
+            del resource_tracker._CLEANUP_FUNCS[Method.SHARED_MEMORY]
 
     def _check_security(self, name: str) -> None:
         """Check if shared memory belongs to and is only read+writeable

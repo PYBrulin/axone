@@ -8,6 +8,7 @@ import netifaces
 
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import CustomFormatter  # noqa
+from axone.enums import Method
 from axone.node import AxoneNode, ZeroconfNode
 from axone.publisher import Publisher
 from axone.subscriber import Subscription
@@ -147,7 +148,7 @@ class AxoneNodeProcess(AxoneNode):
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "socket",
+        method: Method = Method.SOCKET,
     ) -> None:
         """Publish a message to a topic once."""
         return self._call_function_async("_publish_once", topic=topic, rate=rate, method=method)
@@ -156,7 +157,7 @@ class AxoneNodeProcess(AxoneNode):
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: str = "socket",
+        method: Method = Method.SOCKET,
     ) -> None:
         """Register a publisher for a topic."""
         # Note: This is indeed calling the "_publish_once" function but with a
@@ -167,7 +168,7 @@ class AxoneNodeProcess(AxoneNode):
 
     # region Subscriber functions
 
-    def subscribe(self, topic_name: str, callback: Callable | None = None, method: str = "socket") -> None:
+    def subscribe(self, topic_name: str, callback: Callable | None = None, method: Method = Method.SOCKET) -> None:
         """Subscribe to a topic."""
 
         # The objective here is that the NodeProces will subscribe to the
@@ -202,7 +203,7 @@ class AxoneNodeProcess(AxoneNode):
         return self._call_function_async("_subscribe", topic_name=topic_name, callback=None, method=method)
 
     @timeit_if_debug
-    def listen_once(self, topic: str, method: str = "socket") -> dict:
+    def listen_once(self, topic: str, method: Method = Method.SOCKET) -> dict:
         """Listen to a topic once."""
 
         # this function differs from the one in the Node class in that it will
@@ -257,7 +258,7 @@ class AxoneNodeProcess(AxoneNode):
         return self.subscriptions[topic]._topic
 
     @timeit_if_debug
-    def _listen_once_async(self, topic: str, method: str = "socket") -> AxoneStruct:
+    def _listen_once_async(self, topic: str, method: Method = Method.SOCKET) -> AxoneStruct:
         """Listen to a topic once."""
         # This variant of the listen_once function is used in the NodeProcess variant
         # to get the AxoneStruct from the shared memory. But, instead of fetching

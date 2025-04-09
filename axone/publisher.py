@@ -8,6 +8,7 @@ import netifaces
 from zeroconf import ServiceInfo, Zeroconf
 
 from axone.axone_struct import AxoneStruct
+from axone.enums import Method
 from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 
 
@@ -18,7 +19,7 @@ class Publisher:
         topic: AxoneStruct,
         rate: float = -1.0,
         source: Optional[str] = None,
-        method: str = "socket",
+        method: Method = Method.SOCKET,
         publisher_interface: str = "lo",  # Network interface for UDP
         publisher_address: str = "224.1.1.1",  # Multicast address for UDP
         publisher_port: int = 0,  # Publisher port for UDP
@@ -51,7 +52,7 @@ class Publisher:
         self._topic.rate_ = self._rate
         self._topic.timestamp_ = time.time()
 
-        if self._method == "shared_memory":
+        if self._method == Method.SHARED_MEMORY:
             # Create a shared memory for the topic
             self.has_created_shared_memory = False
             try:
@@ -65,7 +66,7 @@ class Publisher:
                 logging.warning(f"Shared memory {self._uuid} already exists")
                 # Try to open the shared memory if it already exists
                 self._memory = SharedMemory(name=self._uuid, create=False)
-        elif self._method == "socket":
+        elif self._method == Method.SOCKET:
             self._create_socket()
 
         # Initialize Zeroconf
@@ -142,9 +143,9 @@ class Publisher:
         encoded = self._topic.encode()
         logging.debug(f"{len(encoded)} bytes encoded for topic {self._name}")
 
-        if self._method == "shared_memory":
+        if self._method == Method.SHARED_MEMORY:
             self._memory.buf[: len(encoded)] = bytes(encoded)
-        elif self._method == "socket":
+        elif self._method == Method.SOCKET:
             self._publish_socket(encoded)
 
     def _publish_socket(self, encoded: bytes) -> None:
@@ -164,12 +165,12 @@ class Publisher:
         )
 
     def stop(self) -> None:
-        if self._method == "shared_memory":
+        if self._method == Method.SHARED_MEMORY:
             if self.has_created_shared_memory:
                 self._memory.unlink()
             else:
                 self._memory.close()
-        elif self._method == "socket":
+        elif self._method == Method.SOCKET:
             self._socket.close()
         self._zeroconf.unregister_all_services()
         self._zeroconf.close()
@@ -185,7 +186,7 @@ if __name__ == "__main__":
 
     my_custom_message = ACustomMessage()
 
-    p = Publisher(my_custom_message, 3, method="socket", publisher_address="224.1.1.1", publisher_port=0)
+    p = Publisher(my_custom_message, 3, method=Method.SOCKET, publisher_address="224.1.1.1", publisher_port=0)
     print("topic", p.topic)
     print("rate", p.rate)
     print("last_update", p.last_update)
