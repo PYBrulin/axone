@@ -73,7 +73,9 @@ class Subscription:
             try:
                 self.subscribe()
             except Exception as e:
-                logging.error(f"Error in subscription thread: {e}", exc_info=True)
+                logging.error(f"Error during subscription: {e}", exc_info=True)
+
+    # region Zeroconf
 
     def _on_service_state_change(self, zeroconf, service_type, name, state_change):
         """Handle service state changes."""
@@ -128,6 +130,8 @@ class Subscription:
             if self._socket:
                 self._socket.close()
                 self._socket = None
+
+    # endregion Zeroconf
 
     def _restart_socket(self) -> None:
         """Restart the socket to rejoin the multicast group."""
