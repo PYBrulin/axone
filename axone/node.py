@@ -460,14 +460,14 @@ class AxoneNode:
         self._server_should_run = True
         self.running_tasks = {}
 
+        # Create and run the event loop in a separate thread
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-
-        # Start the event loop in a separate thread to avoid blocking
         self._executor = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._executor.start()
 
-        self._server_task = asyncio.run_coroutine_threadsafe(self._server(), self._loop)
+        # Schedule periodic tasks directly
+        asyncio.run_coroutine_threadsafe(self.update_publishers(), self._loop)
 
     def stop(self) -> None:
         """
@@ -475,9 +475,12 @@ class AxoneNode:
         """
         self._server_should_run = False
 
-        # Clean up the event loop and tasks
-        if hasattr(self, '_server_task'):
-            self._server_task.cancel()
+        # Cancel all running tasks
+        for task in self.running_tasks.values():
+            task.cancel()
+        self.running_tasks.clear()
+
+        # Stop the event loop
         if hasattr(self, '_loop'):
             self._loop.stop()
         if hasattr(self, '_executor'):
@@ -491,23 +494,6 @@ class AxoneNode:
             publisher.stop()
         for subscription in self.subscriptions.values():
             subscription.stop()
-
-    async def _server(self) -> None:
-        """
-        Periodic server functions using asyncio.
-        """
-        logging.debug(f"Node server started for {self.node_id}:{self.name}.")
-        try:
-            while self._server_should_run:
-                # Wait for a short interval before checking again
-                await asyncio.sleep(1)
-        except Exception as e:
-            self.logger.error(
-                f"Error occurred in server for node {self.node_id}:{self.name}:\n{e}",
-                exc_info=True,
-            )
-        finally:
-            logging.info("Node server stopped")
 
     async def update_publishers(self) -> None:
         """
