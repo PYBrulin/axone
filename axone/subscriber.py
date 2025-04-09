@@ -69,6 +69,7 @@ class Subscription:
 
     def _listen(self) -> None:
         """Listen for incoming messages."""
+        self._stop_event.clear()
         while not self._stop_event.is_set():
             try:
                 self.subscribe()
@@ -230,8 +231,7 @@ class Subscription:
 
     # @timeit_if_debug
     def subscribe(self) -> Any:
-        """Get the latest message from the topic."""
-        # print(f"Subscribing to {self._name}")
+        """Fetch and decode the latest message from the topic."""
         self._last_timestamp = time.time()
 
         if self._method == Method.SHARED_MEMORY:

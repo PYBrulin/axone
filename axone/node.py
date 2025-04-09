@@ -1,10 +1,11 @@
+import asyncio
 import json
 import logging
 import os
 import socket
 import sys
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Optional
 
 import netifaces
@@ -187,6 +188,7 @@ class AxoneNode:
         )
         logging.debug(f"Registered publisher {topic_name} at rate {rate} using {method}.")
         self.update_zeroconf_topics()
+        asyncio.run_coroutine_threadsafe(self.update_publishers(), self._loop)
 
     def _publish_once(
         self,
@@ -258,7 +260,8 @@ class AxoneNode:
         )
 
     def _publish_loop(self) -> None:
-        """Function called periodically to publish messages."""
+        """Function called periodically to publish messages.
+        Used by the NodeProcess variant."""
         for topic in list(self.publishers.keys()):
             if self.publishers[topic].rate < 0.0:
                 continue
@@ -450,22 +453,35 @@ class AxoneNode:
     # endregion Services functions
 
     def start(self) -> None:
-        # Initialize a Thread to listen to the memory events
-        # Initialize a Thread to cleanup the memory periodically
+        """
+        Start the node server using asyncio.
+        """
+        logging.info(f"Starting node server for {self.node_id}:{self.name}.")
         self._server_should_run = True
-        self._executor = ThreadPoolExecutor(max_workers=1)
-        self._executor.submit(self._server)
+        self.running_tasks = {}
 
-        if self.services is not None:
-            self.service_server.start()
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+
+        # Start the event loop in a separate thread to avoid blocking
+        self._executor = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._executor.start()
+
+        self._server_task = asyncio.run_coroutine_threadsafe(self._server(), self._loop)
 
     def stop(self) -> None:
+        """
+        Stop the node server and clean up resources.
+        """
         self._server_should_run = False
-        if self.service_server is not None:
-            self.service_server.stop()
 
-        # Wait for the server to stop
-        self._executor.shutdown(wait=True)
+        # Clean up the event loop and tasks
+        if hasattr(self, '_server_task'):
+            self._server_task.cancel()
+        if hasattr(self, '_loop'):
+            self._loop.stop()
+        if hasattr(self, '_executor'):
+            self._executor.join()
 
         # Stop advertising the node
         self.zeroconf_node.stop_advertising()
@@ -476,24 +492,60 @@ class AxoneNode:
         for subscription in self.subscriptions.values():
             subscription.stop()
 
-    def _server(self) -> None:
+    async def _server(self) -> None:
         """
-        Periodic server functions
+        Periodic server functions using asyncio.
+        """
+        logging.debug(f"Node server started for {self.node_id}:{self.name}.")
+        try:
+            while self._server_should_run:
+                # Wait for a short interval before checking again
+                await asyncio.sleep(1)
+        except Exception as e:
+            self.logger.error(
+                f"Error occurred in server for node {self.node_id}:{self.name}:\n{e}",
+                exc_info=True,
+            )
+        finally:
+            logging.info("Node server stopped")
+
+    async def update_publishers(self) -> None:
+        """
+        Update the publisher list and refresh tasks for new or removed publishers.
+        """
+        logging.debug("Updating publishers...")
+
+        # Add new publishers
+        for topic_name, publisher in self.publishers.items():
+            if topic_name not in self.running_tasks and publisher.rate > 0.0:
+                # Schedule a new publisher task
+                self.running_tasks[topic_name] = asyncio.create_task(self._schedule_publisher(topic_name, publisher))
+                self.logger.info(f"Started publishing task for topic {topic_name}.")
+
+        # Remove tasks for publishers that no longer exist
+        removed_publishers = [name for name in self.running_tasks if name not in self.publishers]
+        for name in removed_publishers:
+            task = self.running_tasks.pop(name)
+            task.cancel()
+            self.logger.info(f"Stopped publishing task for topic {name}.")
+
+    async def _schedule_publisher(self, topic_name: str, publisher: Publisher) -> None:
+        """
+        Periodically publish messages for a single publisher.
         """
         while self._server_should_run:
             try:
-                self._server_exec()
+                current_time = self._timestamp
+                if current_time > float(1 / publisher.rate) + publisher.last_update:
+                    logging.info(f"Publishing topic {topic_name} at rate {publisher.rate}.")
+                    self._publish_once(publisher.topic, publisher.rate)
+
+                # Wait for the next interval
+                await asyncio.sleep(1 / publisher.rate)
+
             except Exception as e:
                 self.logger.error(
-                    f"Error occured when listening for node {self.node_id}:{self.name}:\n{e}",
+                    f"Error occurred while publishing topic {topic_name}:\n{e}",
                     exc_info=True,
                 )
                 break
-        logging.info("Node server stopped")
-
-    def _server_exec(self) -> None:
-        # if self.subscriptions:
-        #     self._listen_subscriptions()
-
-        if self.publishers:
-            self._publish_loop()

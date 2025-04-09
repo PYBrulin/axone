@@ -39,10 +39,10 @@ class ExampleNodePublisher:
     - topic_published_rate_func : publish a message at a fixed rate from a callback function
     """
 
-    def __init__(self, use_process: bool = False, use_socket: bool = False) -> None:
+    def __init__(self, use_process: bool = False, use_shared_memory: bool = False) -> None:
         self.use_process = use_process
-        self.use_socket = use_socket
-        self.method = Method.SOCKET if self.use_socket else Method.SHARED_MEMORY
+        self.use_shared_memory = use_shared_memory
+        self.method = Method.SOCKET if not self.use_shared_memory else Method.SHARED_MEMORY
         # Register node
         NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
         self.node = NodeClass(
@@ -65,7 +65,7 @@ class ExampleNodePublisher:
             # Register a rated publisher
             self.node.publish_rate(ARatedTopic(), rate=3, method=self.method)
 
-            # # Register a rated publisher from a callback function
+            # Register a rated publisher from a callback function
             self.node.publish_rate(ARatedCallbackTopic(), rate=2, method=self.method)
 
             a_standalone_topic = AStandaloneTopic()
@@ -102,9 +102,9 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--debug", action="store_true")
     argparser.add_argument("-p", "--process", action="store_true")
-    argparser.add_argument("-s", "--socket", action="store_true")
+    argparser.add_argument("-shm", "--shared-memory", action="store_true")
     args = argparser.parse_args()
 
     setup_logger(debug=args.debug)
-    node = ExampleNodePublisher(use_process=args.process, use_socket=args.socket)
+    node = ExampleNodePublisher(use_process=args.process, use_shared_memory=args.shared_memory)
     node.run()

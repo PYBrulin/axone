@@ -18,7 +18,7 @@ from axone.zeroconf_node import ZeroconfNode
 
 class AxoneNodeProcess(AxoneNode):
     """
-    NodeProcess is a node that executes inside a process.
+    AxoneNodeProcess is a node that executes inside a separate process.
     Most of the functions are overrides of the Node class to allow
     communication between the process and the main thread.
     They are prefixed with an underscore to avoid name collisions.
@@ -411,13 +411,10 @@ class AxoneNodeProcess(AxoneNode):
         self._executor.join()
 
     def _server_process(self, child_conn) -> None:
-        # _counter = 0  # DEBUG TO BE REMOVED
         while True:
             try:
                 # Check if there's a task to be executed from the child_conn endpoint
                 if child_conn.poll(1 / 10):  # Poll with a timeout of 1 second
-                    # _counter += 1  # DEBUG TO BE REMOVED
-                    # print(f"Server process loop {_counter}")  # DEBUG TO BE REMOVED
                     task = child_conn.recv()
                     sync, function_name, args, kwargs = task
                     logging.debug(f"Received task: {function_name} with args={args}, kwargs={kwargs}")
@@ -440,3 +437,10 @@ class AxoneNodeProcess(AxoneNode):
                 logging.error(f"Error in server process loop: {e}", exc_info=True)
 
             self._server_exec()
+
+    def _server_exec(self) -> None:
+        # if self.subscriptions:
+        #     self._listen_subscriptions()
+
+        if self.publishers:
+            self._publish_loop()
