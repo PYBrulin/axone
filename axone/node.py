@@ -480,20 +480,27 @@ class AxoneNode:
             task.cancel()
         self.running_tasks.clear()
 
-        # Stop the event loop
-        if hasattr(self, '_loop'):
-            self._loop.stop()
-        if hasattr(self, '_executor'):
-            self._executor.join()
-
-        # Stop advertising the node
-        self.zeroconf_node.stop_advertising()
-
         # Cleanup the publishers and subscribers of this node
         for publisher in self.publishers.values():
             publisher.stop()
         for subscription in self.subscriptions.values():
             subscription.stop()
+
+        # Stop advertising the node
+        self.zeroconf_node.stop_advertising()
+
+        # Stop the event loop
+        if hasattr(self, '_loop'):
+            # Schedule loop.stop() from the main thread
+            self._loop.call_soon_threadsafe(self._loop.stop)
+
+        # Wait for the thread to finish
+        if hasattr(self, '_executor'):
+            self._executor.join()
+
+        # Close the event loop
+        if hasattr(self, '_loop') and not self._loop.is_closed():
+            self._loop.close()
 
     async def update_publishers(self) -> None:
         """

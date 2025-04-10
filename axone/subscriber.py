@@ -67,9 +67,18 @@ class Subscription:
         self._listening_thread = threading.Thread(target=self._listen)
         self._listening_thread.start()
 
+    def _stop_listening_thread(self) -> None:
+        """Stop the listening thread."""
+        if hasattr(self, '_listening_thread') and self._listening_thread.is_alive():
+            self._stop_event.set()  # Signal the thread to stop
+            self._listening_thread.join(timeout=5)  # Wait for the thread to finish
+            if self._listening_thread.is_alive():
+                logging.warning("Listening thread did not stop within timeout.")
+            else:
+                logging.info("Listening thread stopped successfully.")
+
     def _listen(self) -> None:
         """Listen for incoming messages."""
-        self._stop_event.clear()
         while not self._stop_event.is_set():
             try:
                 self.subscribe()
@@ -139,6 +148,7 @@ class Subscription:
         self._stop_event.set()
         if self._socket is not None:
             while self._listening_thread.is_alive():
+                self._stop_listening_thread()
                 time.sleep(0.1)
         self._create_socket_with_retries()
         self._start_listening_thread()
@@ -148,6 +158,7 @@ class Subscription:
         retries = 0
         while retries < self._max_retries:
             try:
+                logging.debug(f"(Re)creating a socket attempt {retries}/{self._max_retries}")
                 self._create_socket()
                 return
             except OSError as e:
@@ -258,13 +269,15 @@ class Subscription:
 
     def _subscribe_socket_with_retries(self) -> Optional[bytes]:
         """Subscribe to the socket with retries."""
-        if self._socket is None:
+        if self._socket is None or self._stop_event.is_set():
             return None
         retries = 0
-        while retries < self._max_retries:
+        while retries < self._max_retries and not self._stop_event.is_set():
             try:
                 return self._subscribe_socket()
             except (OSError, socket.timeout) as e:
+                if self._stop_event.is_set():
+                    break
                 logging.warning(f"Socket error {self._name} on attempt {retries + 1}/{self._max_retries}: {e}")
                 retries += 1
                 time.sleep(self._retry_interval)
@@ -283,13 +296,16 @@ class Subscription:
             if self._topic_rate is None or self._topic_rate < 0:
                 # We are not expecting a specific rate, so just return None
                 return None
+            elif self._stop_event.is_set():
+                return None
             else:
                 logging.error(f"Socket error {self._name}: {e}")
                 raise
 
     def stop(self) -> None:
         """Stop the subscription."""
-        self._stop_event.set()
+        self._stop_event.set()  # Signal the thread to stop
+
         if self._method == Method.SHARED_MEMORY and self._memory is not None:
             try:
                 self._memory.close()
@@ -297,5 +313,10 @@ class Subscription:
                 logging.error(f"Shared memory {self._uuid} not found")
         elif self._method == Method.SOCKET and self._socket is not None:
             self._socket.close()
+
+        self._stop_listening_thread()  # Ensure the listening thread is stopped
+
+        self._service_browser.cancel()
         self._zeroconf.close()
+
         logging.debug(f"Subscription {self._name} deleted")
