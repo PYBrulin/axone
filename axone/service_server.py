@@ -180,9 +180,7 @@ class ServiceServer:
         self._server_should_run = False
 
     def _server(self) -> None:
-        """
-        Periodic server functions
-        """
+        """Periodic server functions"""
         # Listen for incoming connections
         self.sock.listen(1)
 

@@ -13,20 +13,20 @@ class ZeroconfListener(ServiceListener):
         self.nodes = {}
 
     def remove_service(self, zeroconf, type, name) -> None:
-        logging.info(f"Service {name} removed")
+        logging.debug(f"Service {name} removed")
         if name in self.nodes:
             del self.nodes[name]
 
     def add_service(self, zeroconf, type, name) -> None:
         info = zeroconf.get_service_info(type, name)
         if info:
-            logging.info(f"Service {name} added, service info: {info}")
+            logging.debug(f"Service {name} added, service info: {info}")
             self.nodes[name] = info
 
     def update_service(self, zeroconf, type, name) -> None:
         info = zeroconf.get_service_info(type, name)
         if info:
-            logging.info(f"Service {name} updated, service info: {info}")
+            logging.debug(f"Service {name} updated, service info: {info}")
             self.nodes[name] = info
 
 
@@ -41,13 +41,24 @@ class ZeroconfNode:
         self.service_name = f"{self.node_name}.{self.service_type}"
         self.interface = interface
         self.topics = kwargs.get("topics", [])
+
+        _services = kwargs.get("services", {})
+        self.services = []
+        for service, _ in _services.items():
+            if callable(service):
+                self.services.append(service.__name__)
+            elif isinstance(service, str):
+                self.services.append(service)  # ? What is the point of this?
+            else:
+                raise TypeError(f"service {service} is not a string or a function.")
+
         new_ip_address = self._get_ip_address(self.interface)
         self.info = ServiceInfo(
             self.service_type,
             self.service_name,
             addresses=[socket.inet_aton(new_ip_address)],
             port=self.service_port,
-            properties={"node_id": self.node_id, "topics": ",".join(self.topics)},
+            properties={"node_id": self.node_id, "topics": ",".join(self.topics), "services": ",".join(self.services)},
         )
 
     def advertise(self) -> None:

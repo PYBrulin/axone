@@ -4,7 +4,7 @@ import time
 
 from zeroconf import ServiceBrowser, Zeroconf
 
-from axone.node import ZeroconfListener
+from axone.zeroconf_node import ZeroconfListener
 
 logging.basicConfig(level=logging.INFO)
 

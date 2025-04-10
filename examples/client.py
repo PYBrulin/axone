@@ -39,7 +39,7 @@ def recvall(sock, n):
     return data
 
 
-if sys.platform != 'win32':
+if False:  # sys.platform != 'win32':
     family = socket.AF_UNIX
     server_address = '/tmp/uds_socket'
 else:

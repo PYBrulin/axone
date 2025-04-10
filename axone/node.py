@@ -41,6 +41,12 @@ class AxoneNode:
         # Node parameters
         self.name = name
         self.node_id = generate_uuid(self.name)  # Generate a unique node id
+        self.default_method: Method = kwargs.get("method", Method.SOCKET)
+        if self.default_method not in Method:
+            logging.error(f"Invalid method: {self.default_method}. Using Method.SOCKET instead.")
+            self.default_method = Method.SOCKET
+        if self.default_method == Method.SHARED_MEMORY:
+            raise NotImplementedError("Regression. Shared Memory are not supported anymore at the moment.")
 
         # Default publisher parameters
         self.default_publisher_interface = kwargs.get("default_publisher_interface", "lo")
@@ -69,6 +75,7 @@ class AxoneNode:
             **kwargs,
         )
         self.zeroconf_node.advertise()
+        self.discovered_nodes = {}
 
         # Services parameters
         self.service_server = None
@@ -87,46 +94,60 @@ class AxoneNode:
 
     def list_nodes(self) -> list[str]:
         """List all the nodes discovered using zeroconf."""
-        nodes = self.zeroconf_node.discover_nodes()
-        return list(nodes.keys())
+        self.discovered_nodes = self.zeroconf_node.discover_nodes()
+        return list(self.discovered_nodes.keys())
 
     def find_node_by_name(self, name: str) -> Optional[str]:
         """Search a node by name"""
-        nodes = self.zeroconf_node.discover_nodes()
-        for node_name, info in nodes.items():
-            if node_name == name:
-                return info.properties.get("node_id")
+        self.discovered_nodes = self.zeroconf_node.discover_nodes()
+        for node_name, info in self.discovered_nodes.items():
+            if node_name.split(info.type, 1)[0][:-1] == name:
+                return info.properties[b"node_id"]
         return None
 
-    def get_node_configuration(self, name: str):
+    def get_node_configuration(self, name: str, method: Optional[Method] = None):
         """Get the configuration of a node."""
-        node_id = self.find_node_by_name(name)
-        if node_id is None:
-            logging.debug(f"Node {name} does not exist.")
-            return None
+        method = method or self.default_method
 
-        # Connect to the requested node memory
-        try:
-            with AxoneSharedMemory(name=node_id, centralized=False) as node_memory:
-                logging.debug(f"Node {name} has the attribute services.")
-                return node_memory.struct.list_instance_attributes()
-        except ValueError:
-            logging.error(f"Node {name} does not have a memory. It might be offline.")
+        if method == Method.SOCKET:
+            self.discovered_nodes = self.zeroconf_node.discover_nodes()
+            for node_name, info in self.discovered_nodes.items():
+                if node_name.split(info.type, 1)[0][:-1] == name:
+                    return info.properties
             return None
+        elif method == Method.SHARED_MEMORY:
+            node_id = self.find_node_by_name(name)
+            if node_id is None:
+                logging.debug(f"Node {name} does not exist.")
+                return None
+
+            # Connect to the requested node memory
+            try:
+                with AxoneSharedMemory(name=node_id, centralized=False) as node_memory:
+                    logging.debug(f"Node {name} has the attribute services.")
+                    return node_memory.struct.list_instance_attributes()
+            except ValueError:
+                logging.error(f"Node {name} does not have a memory. It might be offline.")
+                return None
 
     def list_node_services(self, name: str):
         """List the services available for a node."""
         node_struct = self.get_node_configuration(name)
         if node_struct is None:
+            logging.error(f"Could not fetch node struct for {name}", exc_info=True)
             return None
-        return node_struct.get("services", None)
+        services = node_struct.get(b"services", None)
+        if services is not None:
+            return services.decode("utf-8").split(',')
+        return None
 
     def get_node_services_server_port(self, name: str):
         """List the services available for a node."""
-        node_struct = self.get_node_configuration(name)
-        if node_struct is None:
-            return None
-        return node_struct.get("services_port", None)
+        self.discovered_nodes = self.zeroconf_node.discover_nodes()
+        for node_name, info in self.discovered_nodes.items():
+            if node_name.split(info.type, 1)[0][:-1] == name:
+                return info.port
+        return None
 
     def is_node_advertising_services(self, name: str) -> bool:
         """Check if a node is advertising services."""
@@ -137,6 +158,7 @@ class AxoneNode:
         """List the topics available for a node."""
         node_struct = self.get_node_configuration(name)
         if node_struct is None:
+            logging.error(f"Could not fetch node struct for {name}", exc_info=True)
             return []
         return node_struct.get("topics", [])
 
@@ -158,13 +180,14 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: Method = Method.SOCKET,
+        method: Optional[Method] = None,
         publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
         publisher_port_range: Optional[tuple] = None,
     ) -> None:
         """Register a publisher for a topic."""
+        method = method or self.default_method
 
         # Use instance variables if parameters are None
         if publisher_interface is None:
@@ -194,13 +217,14 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: Method = Method.SOCKET,
+        method: Optional[Method] = None,
         publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
         publisher_port_range: Optional[tuple] = None,
     ) -> None:
         """Publish a message once on a topic."""
+        method = method or self.default_method
 
         # Use instance variables if parameters are None
         if publisher_interface is None:
@@ -233,13 +257,14 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: Method = Method.SOCKET,
+        method: Optional[Method] = None,
         publisher_interface: Optional[str] = None,
         publisher_address: Optional[str] = None,
         publisher_port: int = 0,
         publisher_port_range: Optional[tuple] = None,
     ) -> None:
         """Publish a message on a topic."""
+        method = method or self.default_method
 
         # Use instance variables if parameters are None
         if publisher_interface is None:
@@ -291,11 +316,13 @@ class AxoneNode:
         """Set the node subscriptions."""
         self._subscriptions = subscriptions
 
-    def subscribe(self, topic_name: str, callback: Callable, method: Method = Method.SOCKET) -> None:
+    def subscribe(self, topic_name: str, callback: Callable, method: Optional[Method] = None) -> None:
         """Subscribe to a topic."""
+        method = method or self.default_method
         return self._subscribe(topic_name, callback, method)
 
-    def _subscribe(self, topic_name: str, callback: Callable, method: Method = Method.SOCKET) -> None:
+    def _subscribe(self, topic_name: str, callback: Callable, method: Optional[Method] = None) -> None:
+        method = method or self.default_method
         # Add the callback to the list of callbacks for this topic
         if topic_name not in list(self.subscriptions):
             # Create a new subscription
@@ -328,8 +355,9 @@ class AxoneNode:
         self.subscriptions[topic_name].subscribe()
         return self.subscriptions[topic_name]._topic
 
-    def _listen_once(self, topic: str, method: Method = Method.SOCKET) -> AxoneStruct:
+    def _listen_once(self, topic: str, method: Optional[Method] = None) -> AxoneStruct:
         """Listen to a topic once."""
+        method = method or self.default_method
         if topic not in self.subscriptions:
             sub = Subscription(topic, method=method)
             self.subscriptions[topic] = sub
@@ -339,8 +367,9 @@ class AxoneNode:
         return sub._topic
 
     @timeit_if_debug
-    def listen_once(self, topic: str, method: Method = Method.SOCKET) -> AxoneStruct:
+    def listen_once(self, topic: str, method: Optional[Method] = None) -> AxoneStruct:
         """Listen to a topic once."""
+        method = method or self.default_method
         return self._listen_once(topic, method)
 
     # endregion Subscriber functions
@@ -397,7 +426,7 @@ class AxoneNode:
 
         server_port = self.get_node_services_server_port(dest_node_name)
 
-        if sys.platform != 'win32':
+        if self.default_method == Method.SHARED_MEMORY and sys.platform != 'win32':
             family = socket.AF_UNIX
             server_address = f'/tmp/{server_port}_socket'
         else:

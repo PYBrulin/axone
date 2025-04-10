@@ -1,8 +1,10 @@
 import argparse
+import os
 import time
 from typing import NoReturn
 
 from axone.custom_logger import setup_logger
+from axone.enums import Method
 from axone.node import AxoneNode
 from axone.node_process import AxoneNodeProcess
 
@@ -13,15 +15,14 @@ class ExampleNodeActuator:
     This node functions can call the services of the node "example_performer"
     """
 
-    def __init__(self, use_process: bool = False) -> None:
+    def __init__(self, use_process: bool = False, use_shared_memory: bool = False) -> None:
         self.use_process = use_process
+        self.use_shared_memory = use_shared_memory
+        self.method = Method.SOCKET if not self.use_shared_memory else Method.SHARED_MEMORY
         # Class services/callbacks
         # services = {
-        #     self.move_response: {
-        #         "xy": "float",
-        #         "yz": "float",
-        #         "zx": "float",
-        #     },  # A call back response function triggered by the response of the service "move"
+        #     # A call back response function triggered by the response of the service "move"
+        #     self.move_response: {"xy": "float", "yz": "float", "zx": "float"},
         # }
 
         # Register node
@@ -29,14 +30,11 @@ class ExampleNodeActuator:
         self.node = NodeClass(
             name="example_actuator",
             centralized_memory_endpoint="ExampleNodeMemory",
+            # Here we load a config file next to this script
+            config_file=os.path.join(os.path.dirname(__file__), "axone.json"),
         )
 
-    def move_response(
-        self,
-        xy: float,
-        yz: float,
-        zx: float,
-    ) -> None:
+    def move_response(self, xy: float, yz: float, zx: float) -> None:
         """Receive the response of the service "move" which is the sum of the parameters x+y, y+z, z+x"""
         print("Received a response from move: " + f"x+y = {xy}, y+z = {yz}, z+x = {zx}")
 
@@ -48,20 +46,21 @@ class ExampleNodeActuator:
 
             while True:
                 # Try to find the node "example_performer" in the network
-                target_node = self.node.find_node_by_name("example_performer")
-                if not target_node:
+                target_node_name = "example_performer"
+                target_node_id = self.node.find_node_by_name("example_performer")
+                if not target_node_id:
                     print("Target node not found")
                 else:  # Found the target node
                     # List the available services of the target node
-                    available_services = self.node.list_node_services(target_node)
-                    print(f"Available services of {target_node}: {available_services}")
+                    available_services = self.node.list_node_services(target_node_name)
+                    print(f"Available services of {target_node_name}: {available_services}")
 
                     # Call the service "print" of the target node if available
                     if "print" in available_services:
                         print("Service print is available")
                         print("Calling service print")
                         self.node.call_service(
-                            dest_node_name=target_node,
+                            dest_node_name=target_node_name,
                             service_name="print",
                             message="Hello from example_actuator",
                         )
@@ -102,6 +101,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("-d", "--debug", action="store_true")
     argparser.add_argument("-p", "--process", action="store_true")
+    argparser.add_argument("-shm", "--shared-memory", action="store_true")
     args = argparser.parse_args()
 
     setup_logger(debug=args.debug)
