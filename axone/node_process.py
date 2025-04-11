@@ -48,6 +48,12 @@ class AxoneNodeProcess(AxoneNode):
         self.name = name
         self.node_id = generate_uuid(self.name)  # Generate a unique node id
         self.kwargs = kwargs
+        self.default_method: Method = kwargs.get("method", Method.SOCKET)
+        if self.default_method not in Method:
+            logging.error(f"Invalid method: {self.default_method}. Using Method.SOCKET instead.")
+            self.default_method = Method.SOCKET
+        if self.default_method == Method.SHARED_MEMORY:
+            raise NotImplementedError("Regression. Shared Memory are not supported anymore at the moment.")
 
         # Default publisher parameters
         self.default_publisher_interface = kwargs.get("default_publisher_interface", "lo")
@@ -121,9 +127,9 @@ class AxoneNodeProcess(AxoneNode):
         node = self._call_function("_find_node_by_name", name=name)
         return node
 
-    def get_node_configuration(self, name: str) -> Any:
+    def get_node_configuration(self, name: str, method: Optional[Method] = None) -> Any:
         """Get the configuration of a node."""
-        return self._call_function("_get_node_configuration", name=name)
+        return self._call_function("_get_node_configuration", name=name, method=method)
 
     def list_node_services(self, name: str) -> Any:
         """List the services available for a node."""
@@ -302,7 +308,7 @@ class AxoneNodeProcess(AxoneNode):
         dest_node_id: Optional[str] = None,
         dest_node_name: Optional[str] = None,
         service_name: Optional[str] = None,
-        # answer: Optional[str] = None,
+        answer_callback: Optional[str] = None,
         **kwargs,
     ) -> Any:
         """Call a service."""
@@ -311,7 +317,7 @@ class AxoneNodeProcess(AxoneNode):
             dest_node_id=dest_node_id,
             dest_node_name=dest_node_name,
             service_name=service_name,
-            # answer=answer,
+            answer_callback=answer_callback,
             **kwargs,
         )
 
@@ -391,11 +397,12 @@ class AxoneNodeProcess(AxoneNode):
 
         self._last_federation_time = 0  # The time at which the memory was last federated.
 
-        # Run the server process
-        self._server_process(child_conn)
+        self._server_process(child_conn)  # Run the server process
 
     def stop(self) -> None:
         """Stop the node."""
+        if self.services is not None:
+            self.service_server.stop()
 
         # Close the pipes and the queue
         self._parent_conn.close()

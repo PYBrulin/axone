@@ -45,7 +45,7 @@ class ExampleNodePerformer:
     # region service callbacks
 
     def print(self, message: str) -> None:
-        print(message)
+        print(f"\n{message}")
 
     def move(self, x: float, y: float, z: float) -> Dict[str, float]:
         self.parameters["x"] = x

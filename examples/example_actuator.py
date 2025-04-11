@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import time
 from typing import NoReturn
@@ -67,26 +68,21 @@ class ExampleNodeActuator:
                         print("Called service print")
 
                     # Call the service "move" of the target node
-                    # if not self.use_process:
-                    #     # Note : the service "move" declare an answer callback function which is
-                    #     # triggered when the service is done.  However it is currently not possible
-                    #     # to use the callback function with the NodeProcess variant.
-                    #     print("Calling service move")
-                    #     # self.node.call_service(
-                    #     #     dest_node_id=target_node_id,
-                    #     #     service="move",
-                    #     #     answer=self.move_response,
-                    #     #     x=round(math.sin(10 * time.time() * math.pi / 180), 4),
-                    #     #     y=round(
-                    #     #         math.sin(10 * time.time() * math.pi / 180 + math.pi * 1 / 3),
-                    #     #         4,
-                    #     #     ),
-                    #     #     z=round(
-                    #     #         math.sin(10 * time.time() * math.pi / 180 + math.pi * 2 / 3),
-                    #     #         4,
-                    #     #     ),
-                    #     # )
-                    #     # print("Called service move")
+                    if not self.use_process:
+                        # Note : the service "move" declare an answer callback function which is
+                        # triggered when the service is done. However it is currently not possible
+                        # to use the callback function with the NodeProcess variant.
+                        print("Calling service move")
+                        self.node.call_service(
+                            # dest_node_id=target_node_id,
+                            dest_node_name=target_node_name,
+                            service_name="move",
+                            answer_callback=self.move_response,
+                            x=round(math.sin(10 * time.time() * math.pi / 180), 4),
+                            y=round(math.sin(10 * time.time() * math.pi / 180 + math.pi * 1 / 3), 4),
+                            z=round(math.sin(10 * time.time() * math.pi / 180 + math.pi * 2 / 3), 4),
+                        )
+                        print("Called service move")
 
                 time.sleep(1)
         except KeyboardInterrupt:

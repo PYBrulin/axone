@@ -79,7 +79,6 @@ class AxoneNode:
             **kwargs,
         )
         self.zeroconf_node.advertise()
-        self.discovered_nodes = {}
 
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
@@ -92,25 +91,31 @@ class AxoneNode:
         return time.time()
 
     def list_nodes(self) -> list[str]:
+        return self._list_nodes()
+
+    def _list_nodes(self) -> list[str]:
         """List all the nodes discovered using zeroconf."""
-        self.discovered_nodes = self.zeroconf_node.discover_nodes()
-        return list(self.discovered_nodes.keys())
+        return list(self.zeroconf_node.discovered_nodes.keys())
 
     def find_node_by_name(self, name: str) -> Optional[str]:
+        return self._find_node_by_name(name=name)
+
+    def _find_node_by_name(self, name: str) -> Optional[str]:
         """Search a node by name"""
-        self.discovered_nodes = self.zeroconf_node.discover_nodes()
-        for node_name, info in self.discovered_nodes.items():
+        for node_name, info in self.zeroconf_node.discovered_nodes.items():
             if node_name.split(info.type, 1)[0][:-1] == name:
                 return info.properties[b"node_id"]
         return None
 
     def get_node_configuration(self, name: str, method: Optional[Method] = None):
+        return self._get_node_configuration(name=name, method=method)
+
+    def _get_node_configuration(self, name: str, method: Optional[Method] = None):
         """Get the configuration of a node."""
         method = method or self.default_method
 
         if method == Method.SOCKET:
-            self.discovered_nodes = self.zeroconf_node.discover_nodes()
-            for node_name, info in self.discovered_nodes.items():
+            for node_name, info in self.zeroconf_node.discovered_nodes.items():
                 if node_name.split(info.type, 1)[0][:-1] == name:
                     return info.properties
             return None
@@ -130,8 +135,11 @@ class AxoneNode:
                 return None
 
     def list_node_services(self, name: str):
+        return self._list_node_services(name=name)
+
+    def _list_node_services(self, name: str):
         """List the services available for a node."""
-        node_struct = self.get_node_configuration(name)
+        node_struct = self._get_node_configuration(name)
         if node_struct is None:
             logging.error(f"Could not fetch node struct for {name}", exc_info=True)
             return None
@@ -141,19 +149,27 @@ class AxoneNode:
         return None
 
     def get_node_services_server_port(self, name: str):
+        return self._get_node_services_server_port(name=name)
+
+    def _get_node_services_server_port(self, name: str):
         """List the services available for a node."""
-        self.discovered_nodes = self.zeroconf_node.discover_nodes()
-        for node_name, info in self.discovered_nodes.items():
+        for node_name, info in self.zeroconf_node.discovered_nodes.items():
             if node_name.split(info.type, 1)[0][:-1] == name:
                 return info.port
         return None
 
     def is_node_advertising_services(self, name: str) -> bool:
+        return self._is_node_advertising_services(name=name)
+
+    def _is_node_advertising_services(self, name: str) -> bool:
         """Check if a node is advertising services."""
-        services = self.list_node_services(name)
+        services = self._list_node_services(name)
         return services is not None and services != ""
 
     def get_node_topics(self, name: str) -> list[str]:
+        return self._get_node_topics(name=name)
+
+    def _get_node_topics(self, name: str) -> list[str]:
         """List the topics available for a node."""
         node_struct = self.get_node_configuration(name)
         if node_struct is None:
@@ -394,15 +410,15 @@ class AxoneNode:
             server_port=self.service_port,
         )
         # logging.info(f"Starting service server for node {self.node_id}:{self.name} with {len(self.services)} services.")
-        self.service_server.start()
 
     def _call_service(
         self,
         dest_node_id: Optional[str] = None,
         dest_node_name: Optional[str] = None,
         service_name: str = None,
+        answer_callback: Optional[Callable] = None,
         **kwargs,
-    ) -> None:
+    ):
         """Call a service on a node."""
         if dest_node_id is None and dest_node_name is None:
             self.logger.error("Either dest_node_id or dest_node_name must be specified.")
@@ -415,7 +431,7 @@ class AxoneNode:
             self.logger.error("Service name must be specified.")
             return
 
-        services_advertised = self.list_node_services(dest_node_name)
+        services_advertised = self._list_node_services(dest_node_name)
         if services_advertised is None:
             self.logger.error(f"Node {dest_node_name} is not advertising any services.")
             return
@@ -427,7 +443,7 @@ class AxoneNode:
                 + "be hiding its services. The call will be made anyway."
             )
 
-        server_port = self.get_node_services_server_port(dest_node_name)
+        server_port = self._get_node_services_server_port(dest_node_name)
 
         if self.default_method == Method.SHARED_MEMORY and sys.platform != 'win32':
             family = socket.AF_UNIX
@@ -438,6 +454,7 @@ class AxoneNode:
             if input_port == 0:
                 raise ValueError("Please provide a port number")
             server_address = ('localhost', input_port)
+
         try:
             # Create a socket
             sock = socket.socket(family, socket.SOCK_STREAM)
@@ -450,28 +467,42 @@ class AxoneNode:
             sock.close()
             return
 
-        # Encode the message
-        message = standard_data_encoding(
-            func=service_name,
-            **kwargs,
-        )
-
+        # Encode and send the message
+        message = standard_data_encoding(func=service_name, **kwargs)
         logging.debug(f'sending {message!r}')
         send_msg(sock, message)
 
         # Look for the response
         data = recv_msg(sock)
-        logging.debug(f'received {standard_data_decoding(data)!r}')
+        decoded_data = standard_data_decoding(data)
+        logging.debug(f'received {decoded_data!r}')
+
+        if answer_callback is not None and callable(answer_callback):
+            try:
+                answer_callback(**decoded_data.get("out"))
+            except Exception as e:
+                logging.error(
+                    "\n".join(
+                        [
+                            f"Failed to use callback '{answer_callback.__name__}' using decoded data '{decoded_data}'.",
+                            "You should check number of arguments returned or their types.",
+                            f"Error: {e}",
+                        ]
+                    ),
+                    exc_info=True,
+                )
 
         self.logger.debug(
             f"Called service {service_name} on node {dest_node_id}.",
         )
+        return decoded_data
 
     def call_service(
         self,
         dest_node_id: Optional[str] = None,
         dest_node_name: Optional[str] = None,
         service_name: Optional[str] = None,
+        answer_callback: Optional[str] = None,
         **kwargs,
     ) -> None:
         """Call a service on a node."""
@@ -479,6 +510,7 @@ class AxoneNode:
             dest_node_id=dest_node_id,
             dest_node_name=dest_node_name,
             service_name=service_name,
+            answer_callback=answer_callback,
             **kwargs,
         )
 
@@ -490,7 +522,9 @@ class AxoneNode:
         """
         logging.info(f"Starting node server for {self.node_id}:{self.name}.")
         self._server_should_run = True
-        self.running_tasks = {}
+        if self.service_server is not None:
+            self.service_server.start()  # Start service server
+        self.running_tasks = {}  # Clear running tasks (topics being published)
 
         # Create and run the event loop in a separate thread
         self._loop = asyncio.new_event_loop()

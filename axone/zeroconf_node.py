@@ -1,6 +1,5 @@
 import logging
 import socket
-import time
 from typing import Dict
 
 from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
@@ -39,6 +38,7 @@ class ZeroconfNode:
         self.zeroconf = Zeroconf()
         self.listener = ZeroconfListener()
         self.service_type = "_axone._tcp.local."
+        self.browser = ServiceBrowser(self.zeroconf, self.service_type, self.listener)
         self.service_name = f"{self.node_name}.{self.service_type}"
         self.service_address = None
         self.hide_services = kwargs.get("hide_services", False)
@@ -72,8 +72,13 @@ class ZeroconfNode:
             properties=self.properties,
         )
 
+    @property
+    def discovered_nodes(self) -> Dict[str, ServiceInfo]:
+        """Listed discovered nodes"""
+        return self.listener.nodes
+
     def advertise(self) -> None:
-        """Advertise the node using zeroconf."""
+        """Advertise the node using zeroconf"""
         try:
             self.zeroconf.register_service(self.info)
             logging.info(f"Node {self.node_name} advertised on zeroconf")
@@ -82,7 +87,7 @@ class ZeroconfNode:
             self._handle_non_unique_name_exception()
 
     def _handle_non_unique_name_exception(self) -> None:
-        """Handle NonUniqueNameException by modifying the service name to make it unique."""
+        """Handle NonUniqueNameException by modifying the service name to make it unique"""
         counter = 1
         while True:
             new_service_name = f"{self.node_name}-{counter}.{self.service_type}"
@@ -104,13 +109,13 @@ class ZeroconfNode:
                 counter += 1
 
     def stop_advertising(self) -> None:
-        """Stop advertising the node using zeroconf."""
+        """Stop advertising the node using zeroconf"""
         self.zeroconf.unregister_service(self.info)
         self.zeroconf.close()
         logging.info(f"Node {self.node_name} stopped advertising on zeroconf")
 
     def update_topics(self, published_topics: list[str]) -> None:
-        """Update the topics in the zeroconf properties."""
+        """Update the topics in the zeroconf properties"""
         try:
             self.topics = published_topics
             if self.topics:
@@ -124,9 +129,3 @@ class ZeroconfNode:
             logging.info(f"Updated topics for node {self.node_name} on zeroconf: {self.topics}")
         except Exception as e:
             logging.error(f"Unable to update advertised topics: {e}", exc_info=True)
-
-    def discover_nodes(self) -> Dict[str, ServiceInfo]:
-        """Discover nodes using zeroconf."""
-        ServiceBrowser(self.zeroconf, self.service_type, self.listener)
-        time.sleep(2)  # Wait for discovery
-        return self.listener.nodes
