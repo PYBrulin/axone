@@ -9,11 +9,11 @@ The package provides basic functionalities similar to ROS, such as:
 
 - **Publisher/Subscriber**: A node can publish data to a topic, and other nodes can subscribe to this topic to receive the data.
 - **Service/Client**: A node can provide a service, and other nodes can call this service.
-- **Parameter Server (WIP)**: A node can store parameters on the parameter server, and other nodes can retrieve them.
+<!-- - **Parameter Server (WIP)**: A node can store parameters on the parameter server, and other nodes can retrieve them. -->
 
 > axon, portion of a nerve cell (neuron) that carries nerve impulses away from the cell body. A neuron typically has one axon that connects it with other neurons or with muscle or gland cells.
 >
-> Britannica, The Editors of Encyclopaedia. "axon". Encyclopedia Britannica, 6 May. 2024, https://www.britannica.com/science/axon. Accessed 12 July 2024.
+> Britannica, The Editors of Encyclopaedia. "axon". Encyclopedia Britannica, 6 May. 2024, https://www.britannica.com/science/axon.
 
 ## Installation
 
@@ -41,7 +41,7 @@ Axone nodes are designed to be run on a local system and interact in both a **de
 title: Architecture
 ---
 flowchart LR
-    central_memory[(Centralized shared\nmemory space)]
+    central_memory[(Centralized shared</br>memory space</br> / or Network)]
     self_1[(Self 1)] o--o node_1[Node 1]
     self_2[(Self 2)] o--o node_2[Node 2]
     self_3[(Self 3)] o--o node_3[Node 3]
@@ -66,7 +66,7 @@ classDiagram
     class Node_2{
     }
 
-    Node_1 --> Node_2 : This is a topic being published\nby Node_1 and subscribed by Node_2
+    Node_1 --> Node_2 : This is a topic being published</br>by Node_1 and subscribed by Node_2
     Node_1 ..|> Node_2 : This is a service request call
 ```
 
@@ -141,9 +141,9 @@ classDiagram
     class example_publisher
     class example_subscriber
 
-    example_publisher --> example_subscriber : AStandaloneTopic\n(rate = -1)
-    example_publisher --> example_subscriber : ARatedCallbackTopic\n(rate = 2 Hz)
-    example_publisher --> example_subscriber : ARatedTopic\n(rate = 3 Hz)
+    example_publisher --> example_subscriber : AStandaloneTopic</br>(rate = -1)
+    example_publisher --> example_subscriber : ARatedCallbackTopic</br>(rate = 2 Hz)
+    example_publisher --> example_subscriber : ARatedTopic</br>(rate = 3 Hz)
 ```
 
 #### Publisher
@@ -255,14 +255,8 @@ node = Node(
     name="example_performer",
     ...,
     services={
-        display: {
-            "message": "str",
-        },
-        move: {
-            "x": "float",
-            "y": "float",
-            "z": "float",
-        },
+        display: {"message": "str"},
+        move: {"x": "float", "y": "float", "z": "float"},
     },
 )
 ```
@@ -282,7 +276,7 @@ An answer can be returned by a service, but is not required. The answer must be 
 If an answer is expected, the argument `answer` can be passed to the `call_service` method.
 The `answer` argument accept either a string matching the service name, or directly the callable function to call. The callable function must already be registered as an service on the client node and must take the same arguments as the response message will have. On the service side, the answer will be returned on the service named after `answer`. If no `answer` argument is passed, but the service still returns an answer, the answer will be ignored. For an example of this, see the `example_actuator` and `example_performer` nodes in the `examples` folder which implement a simple request/response service over the request `move` and the response `move_response`.
 
-### Parameter Server
+### Parameter Server (WIP - Unimplemented for now)
 
 ```mermaid
 ---
@@ -308,11 +302,7 @@ x = y = z = 0
 node = Node(
     name="example_performer",
     ...,
-    parameters={
-        "x": x,
-        "y": y,
-        "z": z,
-    },
+    parameters={"x": x, "y": y, "z": z},
 )
 ```
 
@@ -356,9 +346,9 @@ classDiagram
         +stop()
     }
 
-    example_publisher --> example_subscriber : topic_published_once\n(rate = -1)
-    example_publisher --> example_subscriber : topic_published_rate\n(rate = 3 Hz)
-    example_publisher --> example_subscriber : topic_published_rate_func\n(rate = 2 Hz)
+    example_publisher --> example_subscriber : topic_published_once</br>(rate = -1)
+    example_publisher --> example_subscriber : topic_published_rate</br>(rate = 3 Hz)
+    example_publisher --> example_subscriber : topic_published_rate_func</br>(rate = 2 Hz)
     example_actuator ..|> example_performer : print(message="Hello")
     example_actuator ..|> example_performer : move(x=1,y=2,z=3)
     example_performer ..|> example_actuator : move_reponse(xy=x+y,yz=y+z,zx=z+x)
@@ -401,7 +391,7 @@ Using a NodeProcess:
 ```mermaid
     sequenceDiagram
     activate Node
-    App->>NodeProcess: An simple call without any answer expected
+    App->>NodeProcess: Async call without any answer expected
     activate NodeProcess
     NodeProcess->>Node: call(An action)
     Node->>Lock: Acquire lock
@@ -411,7 +401,7 @@ Using a NodeProcess:
     Node-->>NodeProcess: An answer
     deactivate NodeProcess
 
-    App->>NodeProcess: An action
+    App->>NodeProcess: Sync call waiting for the answser
     activate NodeProcess
     NodeProcess->>Node: call(An action)
     Node->>Lock: Acquire lock

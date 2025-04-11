@@ -43,8 +43,43 @@ class AxoneNode:
         self.node_id = generate_uuid(self.name)  # Generate a unique node id
         self.default_method: Method = kwargs.get("method", Method.SOCKET)
         if self.default_method not in Method:
-            logging.error(f"Invalid method: {self.default_method}. Using Method.SOCKET instead.")
-            self.default_method = Method.SOCKET
+            # Try to understand what the value means.
+            # We accept passing strings. Allowed strings are:
+            #   ["socket", "shared_memory", "shm"]
+            if isinstance(self.default_method, str):
+                logging.warning("Trying to check the value of the 'method'")
+                match self.default_method:
+                    case "socket":
+                        self.default_method = Method.SOCKET
+                    case "shm" | "shared_memory":
+                        self.default_method = Method.SHARED_MEMORY
+                    case _:
+                        logging.error(
+                            f"Invalid method: '{self.default_method}'.\n"
+                            + "When setting the 'method' argument using a string, "
+                            + "accepted values are: ['socket', 'shared_memory', 'shm']\n"
+                            + "Using Method.SOCKET instead."
+                        )
+                        self.default_method = Method.SOCKET
+            else:
+                logging.error("Unsupported method. Using Method.SOCKET instead.")
+                self.default_method = Method.SOCKET
+        else:
+            # Or integers which correspond to the enum value.
+            if isinstance(self.default_method, int):
+                try:
+                    self.default_method = Method.from_value(self.default_method)
+                except ValueError:
+                    logging.error(
+                        f"Invalid method value: '{self.default_method}'.\n"
+                        + "When setting the 'method' argument using an integer, "
+                        + "accepted values are: {0:'socket', 1:'shared_memory'}\n"
+                        + "Using Method.SOCKET instead."
+                    )
+                    self.default_method = Method.SOCKET
+            # else...
+            # Already a member of Method.
+
         if self.default_method == Method.SHARED_MEMORY:
             raise NotImplementedError("Regression. Shared Memory are not supported anymore at the moment.")
 
