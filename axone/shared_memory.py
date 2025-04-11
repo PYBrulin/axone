@@ -3,7 +3,7 @@ import os
 from functools import wraps
 from multiprocessing import Lock, resource_tracker
 from multiprocessing.shared_memory import SharedMemory
-from typing import Any, Dict, Optional
+from typing import Any
 
 from axone.axone_struct import AxoneStruct
 from axone.custom_logger import setup_logger
@@ -32,8 +32,8 @@ class AxoneSharedMemory:
     def __init__(
         self,
         name: str,
-        struct: Optional[AxoneStruct] = None,
-        size: Optional[int] = None,
+        struct: AxoneStruct | None = None,
+        size: int | None = None,
         centralized: bool = False,
     ) -> None:
         super().__init__()
@@ -118,7 +118,7 @@ class AxoneSharedMemory:
         if stat.st_uid != os.getuid() or stat.st_gid != os.getgid() or stat.st_mode != 0o100600:
             os.unlink(shm_file)
 
-    def _get_or_create_memory_block(self, name: str, size: Optional[int], centralized: bool = False) -> SharedMemory:
+    def _get_or_create_memory_block(self, name: str, size: int | None, centralized: bool = False) -> SharedMemory:
         """Get or create shared memory block"""
         if centralized:
             self._remove_shm_from_resource_tracker(name)
@@ -213,7 +213,7 @@ class AxoneSharedMemory:
             raise ValueError(f"exceeds available storage {self._size} > {self._memory_block._size}") from exc
 
     @lock
-    def _read_memory(self) -> Dict[str, Any]:
+    def _read_memory(self) -> dict[str, Any]:
         try:
             return self._struct.decode(self._memory_block.buf.tobytes())
         except Exception:

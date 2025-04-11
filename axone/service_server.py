@@ -4,7 +4,7 @@ import socket
 import struct
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Any
 
 import netifaces
 
@@ -18,7 +18,7 @@ def send_msg(sock, msg) -> None:
         # Prefix each message with a 4-byte length (network byte order)
         msg = struct.pack('>I', len(msg)) + msg
         sock.sendall(msg)
-    except socket.timeout:
+    except TimeoutError:
         logging.error("Socket operation timed out")
     except OSError as e:
         logging.error(f"Socket error: {e}")
@@ -32,7 +32,7 @@ def recvall(sock, n) -> None | bytearray:
             if not packet:
                 return None
             data.extend(packet)
-    except socket.timeout:
+    except TimeoutError:
         logging.error("Socket read operation timed out")
     except OSError as e:
         logging.error(f"Socket error during recv: {e}")
@@ -54,9 +54,9 @@ class ServiceServer:
         self,
         services,  # dict[callable | str, dict[str, str | list[str]]],
         node_uuid: str,
-        method: Optional[Method] = None,
+        method: Method | None = None,
         service_interface: str = "lo",  # Network interface for TCP
-        server_port: Optional[int] = None,  # Network port for the TCP. Can be set manually or set by the server itself.
+        server_port: int | None = None,  # Network port for the TCP. Can be set manually or set by the server itself.
     ) -> None:
         self.sock = None
         self.node_uuid = node_uuid
@@ -213,7 +213,7 @@ class ServiceServer:
                         else:
                             logging.debug(f'No more data from {client_address}')
                             break
-            except socket.timeout:
+            except TimeoutError:
                 continue  # Handle specific exceptions as needed
             except Exception as e:
                 logging.error(f"Server error: {e}", exc_info=True)

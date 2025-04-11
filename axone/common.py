@@ -3,7 +3,6 @@ import random
 import socket
 import string
 import time
-from typing import Optional, Tuple
 
 import netifaces
 
@@ -34,7 +33,7 @@ def timeit_if_debug(func):
     return wrapper
 
 
-def find_free_port(port_range: Optional[Tuple[int, int]] = None) -> int:
+def find_free_port(port_range: tuple[int, int] | None = None) -> int:
     """Find a free port on the host OS within the specified range.
 
     Args:

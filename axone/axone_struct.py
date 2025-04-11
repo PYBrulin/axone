@@ -1,7 +1,8 @@
 import inspect
 import logging
 import struct
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from axone.common import timeit_if_debug
 
@@ -299,7 +300,7 @@ class AxoneStruct:
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
-    def get(self, key: str, default: Optional[Any] = None) -> Any:
+    def get(self, key: str, default: Any | None = None) -> Any:
         try:
             return getattr(self, key)
         except AttributeError:

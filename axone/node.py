@@ -6,7 +6,7 @@ import socket
 import sys
 import threading
 import time
-from typing import Callable, Dict, Optional
+from collections.abc import Callable
 
 import netifaces
 
@@ -136,8 +136,8 @@ class AxoneNode:
             self.self_node.advertise()
 
         # Lists of publishers, subscribers and services
-        self._publishers: Dict[str, Publisher] = {}
-        self._subscriptions: Dict[str, Subscription] = {}
+        self._publishers: dict[str, Publisher] = {}
+        self._subscriptions: dict[str, Subscription] = {}
 
     # region Common functions
 
@@ -168,10 +168,10 @@ class AxoneNode:
             raise NotImplementedError("SHM")
         return ret
 
-    def find_node_by_name(self, name: str) -> Optional[str]:
+    def find_node_by_name(self, name: str) -> str | None:
         return self._find_node_by_name(name=name)
 
-    def _find_node_by_name(self, name: str) -> Optional[str]:
+    def _find_node_by_name(self, name: str) -> str | None:
         """Search a node by name"""
         if self.default_method is Method.SOCKET:
             for node_name, info in self.zeroconf_node.discovered_nodes.items():
@@ -181,10 +181,10 @@ class AxoneNode:
             return self.centralized_node.memory.struct.list_instance_attributes().get(generate_uuid(name), None)
         return None
 
-    def get_node_configuration(self, name: str, method: Optional[Method] = None):
+    def get_node_configuration(self, name: str, method: Method | None = None):
         return self._get_node_configuration(name=name, method=method)
 
-    def _get_node_configuration(self, name: str, method: Optional[Method] = None):
+    def _get_node_configuration(self, name: str, method: Method | None = None):
         """Get the configuration of a node."""
         method = method or self.default_method
 
@@ -266,12 +266,12 @@ class AxoneNode:
     # region Publisher functions
 
     @property
-    def publishers(self) -> Dict[str, Publisher]:
+    def publishers(self) -> dict[str, Publisher]:
         """Return the node publishers."""
         return self._publishers
 
     @publishers.setter
-    def publishers(self, publishers: Dict[str, Publisher]) -> None:
+    def publishers(self, publishers: dict[str, Publisher]) -> None:
         """Set the node publishers."""
         self._publishers = publishers
 
@@ -279,11 +279,11 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: Optional[Method] = None,
-        publisher_interface: Optional[str] = None,
-        publisher_address: Optional[str] = None,
+        method: Method | None = None,
+        publisher_interface: str | None = None,
+        publisher_address: str | None = None,
         publisher_port: int = 0,
-        publisher_port_range: Optional[tuple] = None,
+        publisher_port_range: tuple | None = None,
     ) -> None:
         """Register a publisher for a topic."""
         method = method or self.default_method
@@ -320,11 +320,11 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: Optional[Method] = None,
-        publisher_interface: Optional[str] = None,
-        publisher_address: Optional[str] = None,
+        method: Method | None = None,
+        publisher_interface: str | None = None,
+        publisher_address: str | None = None,
         publisher_port: int = 0,
-        publisher_port_range: Optional[tuple] = None,
+        publisher_port_range: tuple | None = None,
     ) -> None:
         """Publish a message once on a topic."""
         method = method or self.default_method
@@ -363,11 +363,11 @@ class AxoneNode:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        method: Optional[Method] = None,
-        publisher_interface: Optional[str] = None,
-        publisher_address: Optional[str] = None,
+        method: Method | None = None,
+        publisher_interface: str | None = None,
+        publisher_address: str | None = None,
         publisher_port: int = 0,
-        publisher_port_range: Optional[tuple] = None,
+        publisher_port_range: tuple | None = None,
     ) -> None:
         """Publish a message on a topic."""
         method = method or self.default_method
@@ -413,21 +413,21 @@ class AxoneNode:
 
     # region Subscriber functions
     @property
-    def subscriptions(self) -> Dict[str, Subscription]:
+    def subscriptions(self) -> dict[str, Subscription]:
         """Return the node subscriptions dictionary containing the topics as keys and the callbacks as values."""
         return self._subscriptions
 
     @subscriptions.setter
-    def subscriptions(self, subscriptions: Dict[str, Subscription]) -> None:
+    def subscriptions(self, subscriptions: dict[str, Subscription]) -> None:
         """Set the node subscriptions."""
         self._subscriptions = subscriptions
 
-    def subscribe(self, topic_name: str, callback: Callable, method: Optional[Method] = None) -> None:
+    def subscribe(self, topic_name: str, callback: Callable, method: Method | None = None) -> None:
         """Subscribe to a topic."""
         method = method or self.default_method
         return self._subscribe(topic_name, callback, method)
 
-    def _subscribe(self, topic_name: str, callback: Callable, method: Optional[Method] = None) -> None:
+    def _subscribe(self, topic_name: str, callback: Callable, method: Method | None = None) -> None:
         method = method or self.default_method
         # Add the callback to the list of callbacks for this topic
         if topic_name not in list(self.subscriptions):
@@ -461,7 +461,7 @@ class AxoneNode:
         self.subscriptions[topic_name].subscribe()
         return self.subscriptions[topic_name]._topic
 
-    def _listen_once(self, topic: str, method: Optional[Method] = None) -> AxoneStruct:
+    def _listen_once(self, topic: str, method: Method | None = None) -> AxoneStruct:
         """Listen to a topic once."""
         method = method or self.default_method
         if topic not in self.subscriptions:
@@ -473,7 +473,7 @@ class AxoneNode:
         return sub._topic
 
     @timeit_if_debug
-    def listen_once(self, topic: str, method: Optional[Method] = None) -> AxoneStruct:
+    def listen_once(self, topic: str, method: Method | None = None) -> AxoneStruct:
         """Listen to a topic once."""
         method = method or self.default_method
         return self._listen_once(topic, method)
@@ -483,7 +483,7 @@ class AxoneNode:
     # region Services functions
 
     @property
-    def services(self) -> Dict[str, Callable]:
+    def services(self) -> dict[str, Callable]:
         """Return the node services."""
         return self._services
 
@@ -504,10 +504,10 @@ class AxoneNode:
 
     def _call_service(
         self,
-        dest_node_id: Optional[str] = None,
-        dest_node_name: Optional[str] = None,
+        dest_node_id: str | None = None,
+        dest_node_name: str | None = None,
         service_name: str = None,
-        answer_callback: Optional[Callable] = None,
+        answer_callback: Callable | None = None,
         **kwargs,
     ):
         """Call a service on a node."""
@@ -590,10 +590,10 @@ class AxoneNode:
 
     def call_service(
         self,
-        dest_node_id: Optional[str] = None,
-        dest_node_name: Optional[str] = None,
-        service_name: Optional[str] = None,
-        answer_callback: Optional[str] = None,
+        dest_node_id: str | None = None,
+        dest_node_name: str | None = None,
+        service_name: str | None = None,
+        answer_callback: str | None = None,
         **kwargs,
     ) -> None:
         """Call a service on a node."""

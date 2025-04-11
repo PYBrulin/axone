@@ -1,7 +1,7 @@
 import argparse
 import os
 import time
-from typing import Dict, NoReturn
+from typing import NoReturn
 
 from axone.custom_logger import setup_logger
 from axone.enums import Method
@@ -51,7 +51,7 @@ class ExampleNodePerformer:
     def print(self, message: str) -> None:
         print(f"\n{message}")
 
-    def move(self, x: float, y: float, z: float) -> Dict[str, float]:
+    def move(self, x: float, y: float, z: float) -> dict[str, float]:
         self.parameters["x"] = x
         self.parameters["y"] = y
         self.parameters["z"] = z

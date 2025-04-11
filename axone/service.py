@@ -1,7 +1,6 @@
 import logging
 import time
 from multiprocessing.shared_memory import SharedMemory
-from typing import Optional
 
 from axone.axone_struct import AxoneService
 from axone.common import generate_uuid
@@ -13,7 +12,7 @@ class Service:
         self,
         service: AxoneService,
         rate: float = -1.0,
-        source: Optional[str] = None,
+        source: str | None = None,
     ) -> None:
         # Ensure that the service is an instance of AxoneStruct or that it has inherited from it
         if not isinstance(service, AxoneService):
@@ -70,7 +69,7 @@ class Service:
         """The rolling counter of the service"""
         return self._service.rolling_counter_
 
-    def fetch_request(self) -> Optional[AxoneService.AxoneRequest]:
+    def fetch_request(self) -> AxoneService.AxoneRequest | None:
         """Fetch the request of the service"""
         # Check that the memory is not empty
         if self._memory is None:
@@ -89,7 +88,7 @@ class Service:
         # We have a new request
         return self._service.request_
 
-    def reply_answer(self, answer: Optional[AxoneService.AxoneAnswer] = None) -> None:
+    def reply_answer(self, answer: AxoneService.AxoneAnswer | None = None) -> None:
         """Give an answer to the service"""
         if answer is not None:
             self._service.answer_ = answer

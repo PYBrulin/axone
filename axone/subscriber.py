@@ -3,8 +3,9 @@ import socket
 import struct
 import threading
 import time
+from collections.abc import Callable
 from multiprocessing.shared_memory import SharedMemory
-from typing import Any, Callable, List, Optional
+from typing import Any
 
 from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
 
@@ -230,7 +231,7 @@ class Subscription:
         return self._last_timestamp
 
     @property
-    def callbacks(self) -> List[Callable]:
+    def callbacks(self) -> list[Callable]:
         """The list of callbacks to call when a new message is received."""
         return self._callbacks
 
@@ -269,13 +270,13 @@ class Subscription:
                 time.sleep(max(0, float(1 / self._topic_rate) - (time.time() - self._last_timestamp)))
                 # ! Not precise at all...
 
-    def _subscribe_shared_memory(self) -> Optional[bytes]:
+    def _subscribe_shared_memory(self) -> bytes | None:
         """Subscribe to the shared memory."""
         if self._memory is None or self._memory.buf is None:
             return None
         return bytes(self._memory.buf[:])
 
-    def _subscribe_socket_with_retries(self) -> Optional[bytes]:
+    def _subscribe_socket_with_retries(self) -> bytes | None:
         """Subscribe to the socket with retries."""
         if self._socket is None or self._stop_event.is_set():
             return None
@@ -283,7 +284,7 @@ class Subscription:
         while retries < self._max_retries and not self._stop_event.is_set():
             try:
                 return self._subscribe_socket()
-            except (OSError, socket.timeout) as e:
+            except (OSError, TimeoutError) as e:
                 if self._stop_event.is_set():
                     break
                 logging.warning(f"Socket error {self._name} on attempt {retries + 1}/{self._max_retries}: {e}")
@@ -293,14 +294,14 @@ class Subscription:
         logging.error(f"Failed to receive data after {self._max_retries} attempts")
         return None
 
-    def _subscribe_socket(self) -> Optional[bytes]:
+    def _subscribe_socket(self) -> bytes | None:
         """Subscribe to the socket."""
         if self._socket is None:
             return None
         try:
             data, _ = self._socket.recvfrom(2048)  # Adjust buffer size as needed
             return data
-        except (OSError, socket.timeout) as e:
+        except (OSError, TimeoutError) as e:
             if self._topic_rate is None or self._topic_rate < 0:
                 # We are not expecting a specific rate, so just return None
                 return None

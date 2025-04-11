@@ -1,6 +1,5 @@
 import logging
 import socket
-from typing import Dict
 
 from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
 from zeroconf._exceptions import NonUniqueNameException
@@ -73,7 +72,7 @@ class ZeroconfNode:
         )
 
     @property
-    def discovered_nodes(self) -> Dict[str, ServiceInfo]:
+    def discovered_nodes(self) -> dict[str, ServiceInfo]:
         """Listed discovered nodes"""
         return self.listener.nodes
 

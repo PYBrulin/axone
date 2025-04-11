@@ -2,7 +2,6 @@ import logging
 import socket
 import time
 from multiprocessing.shared_memory import SharedMemory
-from typing import Optional
 
 import netifaces
 from zeroconf import ServiceInfo, Zeroconf
@@ -19,7 +18,7 @@ class Publisher:
         self,
         topic: AxoneStruct,
         rate: float = -1.0,
-        source: Optional[str] = None,
+        source: str | None = None,
         method: Method = Method.SOCKET,
         publisher_interface: str = "lo",  # Network interface for UDP
         publisher_address: str = "224.1.1.1",  # Multicast address for UDP

@@ -5,7 +5,7 @@ authors = [
 ]
 description = "ROS-like framework for distributed computing implemented in pure-Python"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 keywords = ["AXONE", "distributed-computing", "federated-computational-governance "]
 license = {text = "BSD-3-Clause"}
 classifiers = [

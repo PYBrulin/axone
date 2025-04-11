@@ -2,7 +2,8 @@ import json
 import logging
 import multiprocessing
 import os
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 import netifaces
 
@@ -70,8 +71,8 @@ class AxoneNodeProcess(AxoneNode):
         self._services = kwargs.get("services", None)
 
         # Lists of publishers, subscribers and services
-        self._publishers: Dict[str, Publisher] = {}
-        self._subscriptions: Dict[str, Subscription] = {}
+        self._publishers: dict[str, Publisher] = {}
+        self._subscriptions: dict[str, Subscription] = {}
 
     # region Process functions
 
@@ -122,12 +123,12 @@ class AxoneNodeProcess(AxoneNode):
         """
         return self._call_function("_list_nodes")
 
-    def find_node_by_name(self, name: str) -> Optional[str]:
+    def find_node_by_name(self, name: str) -> str | None:
         """Search a node by name"""
         node = self._call_function("_find_node_by_name", name=name)
         return node
 
-    def get_node_configuration(self, name: str, method: Optional[Method] = None) -> Any:
+    def get_node_configuration(self, name: str, method: Method | None = None) -> Any:
         """Get the configuration of a node."""
         return self._call_function("_get_node_configuration", name=name, method=method)
 
@@ -305,10 +306,10 @@ class AxoneNodeProcess(AxoneNode):
     # region Services functions
     def call_service(
         self,
-        dest_node_id: Optional[str] = None,
-        dest_node_name: Optional[str] = None,
-        service_name: Optional[str] = None,
-        answer_callback: Optional[str] = None,
+        dest_node_id: str | None = None,
+        dest_node_name: str | None = None,
+        service_name: str | None = None,
+        answer_callback: str | None = None,
         **kwargs,
     ) -> Any:
         """Call a service."""
@@ -371,7 +372,7 @@ class AxoneNodeProcess(AxoneNode):
         # because the previous initialization is not accessible from the process.
         # Due to this limitation, we need to periodically check if there are new
         # subscribers to add.
-        self._subscriptions: Dict[str, Subscription] = {}
+        self._subscriptions: dict[str, Subscription] = {}
         self._subscription_queue = subscription_queue
 
         # Check for required parameters

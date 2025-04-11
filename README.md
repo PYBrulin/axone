@@ -1,5 +1,7 @@
 # AXONE
 
+<a href="https://www.python.org/downloads/release/python-3100/"><img alt="Python: 3.10" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
+
 [![Build](https://github.com/PYBrulin/axone/actions/workflows/pywheels.yaml/badge.svg)](https://github.com/PYBrulin/axone/actions/workflows/pywheels.yaml)
 
 Axone is a ROS-like framework for distributed computing on a local system implemented in pure-Python. It is designed to be used in a multi-process environment by using a **UDP multicast sockets** or **shared memories** for communication between nodes. Outside communication is supported using UDP sockets.
