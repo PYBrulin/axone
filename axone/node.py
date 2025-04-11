@@ -10,6 +10,7 @@ from typing import Callable, Dict, Optional
 
 import netifaces
 
+from axone.axone_shm import CentralizedNode, SelfNode
 from axone.axone_struct import AxoneStruct, standard_data_decoding, standard_data_encoding
 from axone.common import find_free_port, generate_uuid, timeit_if_debug
 from axone.enums import Method
@@ -24,7 +25,11 @@ class AxoneNode:
     logger = logging.getLogger(__name__)
 
     def __init__(self, name: str, **kwargs) -> None:
-        """Initialize a node for the Axone framework."""
+        """Initialize a node for the Axone framework.
+
+        Args:
+            TODO
+        """
         self.config_file = kwargs.get("config_file", None)
         if self.config_file is not None:
             # Load the config file
@@ -80,8 +85,8 @@ class AxoneNode:
             # else...
             # Already a member of Method.
 
-        if self.default_method == Method.SHARED_MEMORY:
-            raise NotImplementedError("Regression. Shared Memory are not supported anymore at the moment.")
+        # if self.default_method is Method.SHARED_MEMORY:
+        #     raise NotImplementedError("Regression. Shared Memory are not supported anymore at the moment.")
 
         # Default publisher parameters
         self.default_publisher_interface = kwargs.get("default_publisher_interface", "lo")
@@ -105,15 +110,30 @@ class AxoneNode:
         self._services = kwargs.get("services", None)
         self.setup_service_server()
 
-        # Zeroconf parameters
-        self.zeroconf_node = ZeroconfNode(
-            name=self.name,
-            node_id=self.node_id,
-            port=self.service_port,
-            interface=self.default_publisher_interface,
-            **kwargs,
-        )
-        self.zeroconf_node.advertise()
+        if self.default_method is Method.SOCKET:
+            # Zeroconf parameters
+            self.zeroconf_node = ZeroconfNode(
+                name=self.name,
+                node_id=self.node_id,
+                port=self.service_port,
+                interface=self.default_publisher_interface,
+                **kwargs,
+            )
+            self.zeroconf_node.advertise()
+        elif self.default_method is Method.SHARED_MEMORY:
+            # Create the centralized node
+            self.centralized_node = CentralizedNode(self.name, self.node_id, **kwargs)
+            self.centralized_node.advertise()
+
+            # Create the "self" node
+            self.self_node = SelfNode(
+                name=self.name,
+                node_id=self.node_id,
+                # services_names=self.service_server.services_keys if self.service_server is not None else [],
+                # services_server_port=self.service_server.server_port if self.service_server is not None else 0,
+                **kwargs,
+            )
+            self.self_node.advertise()
 
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
@@ -130,7 +150,10 @@ class AxoneNode:
 
     def _list_nodes(self) -> list[str]:
         """List all the nodes discovered using zeroconf."""
-        return list(self.zeroconf_node.discovered_nodes.keys())
+        if self.default_method is Method.SOCKET:
+            return list(self.zeroconf_node.discovered_nodes.keys())
+        elif self.default_method is Method.SHARED_MEMORY:
+            return self.centralized_node.memory.struct.list_instance_attributes()
 
     def dict_nodes(self) -> list[str]:
         return self._dict_nodes()
@@ -138,8 +161,11 @@ class AxoneNode:
     def _dict_nodes(self) -> list[str]:
         """List all the nodes discovered using zeroconf."""
         ret = dict()
-        for node, info in self.zeroconf_node.discovered_nodes.items():
-            ret[node.split(info.type, 1)[0][:-1]] = info.decoded_properties
+        if self.default_method is Method.SOCKET:
+            for node, info in self.zeroconf_node.discovered_nodes.items():
+                ret[node.split(info.type, 1)[0][:-1]] = info.decoded_properties
+        elif self.default_method is Method.SHARED_MEMORY:
+            raise NotImplementedError("SHM")
         return ret
 
     def find_node_by_name(self, name: str) -> Optional[str]:
@@ -147,9 +173,12 @@ class AxoneNode:
 
     def _find_node_by_name(self, name: str) -> Optional[str]:
         """Search a node by name"""
-        for node_name, info in self.zeroconf_node.discovered_nodes.items():
-            if node_name.split(info.type, 1)[0][:-1] == name:
-                return info.decoded_properties["node_id"]
+        if self.default_method is Method.SOCKET:
+            for node_name, info in self.zeroconf_node.discovered_nodes.items():
+                if node_name.split(info.type, 1)[0][:-1] == name:
+                    return info.decoded_properties["node_id"]
+        elif self.default_method is Method.SHARED_MEMORY:
+            return self.centralized_node.memory.struct.list_instance_attributes().get(generate_uuid(name), None)
         return None
 
     def get_node_configuration(self, name: str, method: Optional[Method] = None):
@@ -159,12 +188,12 @@ class AxoneNode:
         """Get the configuration of a node."""
         method = method or self.default_method
 
-        if method == Method.SOCKET:
+        if method is Method.SOCKET:
             for node_name, info in self.zeroconf_node.discovered_nodes.items():
                 if node_name.split(info.type, 1)[0][:-1] == name:
                     return info.decoded_properties
             return None
-        elif method == Method.SHARED_MEMORY:
+        elif method is Method.SHARED_MEMORY:
             node_id = self.find_node_by_name(name)
             if node_id is None:
                 logging.debug(f"Node {name} does not exist.")
@@ -188,9 +217,12 @@ class AxoneNode:
         if node_struct is None:
             # logging.error(f"Could not fetch node struct for {name}", exc_info=True)
             return None
-        services = node_struct.get("services", None)
-        if services is not None:
-            return services.split(',')
+        if self.default_method is Method.SOCKET:
+            services = node_struct.get("services", None)
+            if services is not None:
+                return services.split(',')
+        elif self.default_method is Method.SHARED_MEMORY:
+            return node_struct.get("services", None)
         return None
 
     def get_node_services_server_port(self, name: str):
@@ -198,9 +230,16 @@ class AxoneNode:
 
     def _get_node_services_server_port(self, name: str):
         """List the services available for a node."""
-        for node_name, info in self.zeroconf_node.discovered_nodes.items():
-            if node_name.split(info.type, 1)[0][:-1] == name:
-                return info.port
+        if self.default_method is Method.SOCKET:
+            for node_name, info in self.zeroconf_node.discovered_nodes.items():
+                if node_name.split(info.type, 1)[0][:-1] == name:
+                    return info.port
+        elif self.default_method is Method.SHARED_MEMORY:
+            node_struct = self._get_node_configuration(name)
+            if node_struct is None:
+                return None
+            return node_struct.get("services_port", None)
+            raise NotImplementedError("SHM")
         return None
 
     def is_node_advertising_services(self, name: str) -> bool:
@@ -270,7 +309,11 @@ class AxoneNode:
             publisher_port_range=publisher_port_range,
         )
         logging.debug(f"Registered publisher {topic_name} at rate {rate} using {method}.")
-        self.update_zeroconf_topics()
+        if method is Method.SOCKET:
+            self.update_zeroconf_topics()
+        elif method is Method.SHARED_MEMORY:
+            if topic_name not in self.publishers:  # Check if the topic is registered
+                self.self_node.add_topic(topic_name)
         asyncio.run_coroutine_threadsafe(self.update_publishers(), self._loop)
 
     def _publish_once(
@@ -307,7 +350,10 @@ class AxoneNode:
                 publisher_port=publisher_port,
                 publisher_port_range=publisher_port_range,
             )
-            self.update_zeroconf_topics()
+            if method is Method.SOCKET:
+                self.update_zeroconf_topics()
+            elif method is Method.SHARED_MEMORY:
+                self.self_node.add_topic(topic_name)
 
         # Publish the message
         self.publishers[topic_name].publish(topic)
@@ -490,7 +536,7 @@ class AxoneNode:
 
         server_port = self._get_node_services_server_port(dest_node_name)
 
-        if self.default_method == Method.SHARED_MEMORY and sys.platform != 'win32':
+        if self.default_method is Method.SHARED_MEMORY and sys.platform != 'win32':
             family = socket.AF_UNIX
             server_address = f'/tmp/{server_port}_socket'
         else:
@@ -601,8 +647,15 @@ class AxoneNode:
         for subscription in self.subscriptions.values():
             subscription.stop()
 
-        # Stop advertising the node
-        self.zeroconf_node.stop_advertising()
+        if self.default_method is Method.SOCKET:
+            # Stop advertising the node
+            self.zeroconf_node.stop_advertising()
+        elif self.default_method is Method.SHARED_MEMORY:
+            # Unregister the node from the centralized memory
+            self.centralized_node.memory[self.node_id] = None
+
+            # Unregister the node from the self memory
+            self.self_node.memory.cleanup()
 
         # Stop the event loop
         if hasattr(self, '_loop'):

@@ -4,8 +4,8 @@
     version = "3.10.10";
     venv = {
       enable = true;
-      # TODO: It is not possible to use a pyproject.toml file to specify dependencies. I am putting this on hold for now. Install dependencies manually.
       requirements = ''
+        asyncio
         crc
         filelock
         netifaces
@@ -13,7 +13,7 @@
         zeroconf
         pytest
         pytest-benchmark
-        -e . # This package
+        -e . # Install this package in edit mode for easy prototyping
       '';
     };
   };

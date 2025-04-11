@@ -37,6 +37,7 @@ class ExampleNodePerformer:
         NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
         self.node = NodeClass(
             name="example_performer",
+            method=self.method,
             centralized_memory_endpoint="ExampleNodeMemory",
             parameters=self.parameters,
             services=services,
