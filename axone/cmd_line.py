@@ -3,6 +3,7 @@ import cmd
 import logging
 import os
 import time
+from ast import literal_eval
 
 from axone.custom_logger import setup_logger
 from axone.node_process import AxoneNodeProcess
@@ -57,8 +58,7 @@ class AxoneCommandLine(cmd.Cmd):
 
     def do_list(self, arg) -> None:
         """List all connected nodes."""
-        node_list = self.node.list_nodes()
-        logging.info("Node lists:\n\t" + "\n\t".join(f"{node_id}: {node_name}" for node_id, node_name in node_list.items()))
+        logging.info("Node lists:\n\t" + "\n\t".join(f"{node_name}" for node_name in self.node.list_nodes()))
 
     def complete_find(self, text, line, begidx, endidx) -> list[str]:
         return [
@@ -83,7 +83,7 @@ class AxoneCommandLine(cmd.Cmd):
             logging.info("Configuration:\n\t" + "\n\t".join(f"{k}: {v}" for k, v in node_config.items()))
             logging.info(f"Services available: {self.node.is_node_advertising_services(node_name)}")
         else:
-            logging.info(f"Node {node_name} not found.")
+            logging.warning(f"Node {node_name} not found.")
 
     def complete_topic(self, text, line, begidx, endidx) -> list[str]:  # -> list:
         commands = ["echo", "list", "subscribe"]  # , "unsubscribe"]
@@ -112,7 +112,7 @@ class AxoneCommandLine(cmd.Cmd):
         elif command == "list":
             topics = {}
             # Find all onine nodes, and get their topics
-            for node_id, node_name in self.node.list_nodes().items():
+            for node_name in self.node.list_nodes():
                 if node_name is not None:
                     published_topics = self.node.get_node_topics(node_name)
                     for topic in published_topics:
@@ -163,19 +163,32 @@ class AxoneCommandLine(cmd.Cmd):
         if command == "list":
             if len(args) > 1:
                 node_name = args[1]
-                services = self.node.is_node_advertising_services(node_name)
-                logging.info(f"Services available on node {node_name}: {services}")
+                try:
+                    has_services = self.node.is_node_advertising_services(node_name)
+                    if has_services:
+                        services = self.node.list_node_services(node_name)
+                        logging.info(f"Services available on node '{node_name}': {services}")
+                    else:
+                        logging.warning(f"The node '{node_name}' has no services advertised")
+                except Exception:
+                    logging.warning(f"Node '{node_name}' not found.")
             else:
                 logging.info("Usage: service list <node_name>")
 
         elif command == "call":
-            if len(args) > 1:
-                service_name = args[1]
-                logging.debug(f"Calling service: {service_name}")
-                response = self.node.call_service(service_name)
+            if len(args) > 2:
+                node_name = args[1]
+                service_name = args[2]
+                if len(args) >= 4:
+                    kwargs = " ".join(args[3:])
+                    kwargs = {k: literal_eval(v) for k, v in (pair.split('=') for pair in kwargs.split())}
+                else:
+                    kwargs = {}
+                logging.info(f"Calling service '{service_name}({kwargs})' on node '{node_name}'")
+                response = self.node.call_service(dest_node_name=node_name, service_name=service_name, **kwargs)
                 logging.info(f"Response: {response}")
             else:
-                logging.info("Usage: service call <service_name>")
+                logging.info("Usage: service call <node_name> <service_name> <kwarg_1> <kwarg_2> <kwarg_3> ...")
 
         else:
             logging.info("Usage: service [list|call]")

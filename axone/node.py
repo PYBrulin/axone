@@ -151,7 +151,7 @@ class AxoneNode:
         """List the services available for a node."""
         node_struct = self._get_node_configuration(name)
         if node_struct is None:
-            logging.error(f"Could not fetch node struct for {name}", exc_info=True)
+            # logging.error(f"Could not fetch node struct for {name}", exc_info=True)
             return None
         services = node_struct.get("services", None)
         if services is not None:
@@ -181,9 +181,9 @@ class AxoneNode:
 
     def _get_node_topics(self, name: str) -> list[str]:
         """List the topics available for a node."""
-        node_struct = self.get_node_configuration(name)
+        node_struct = self._get_node_configuration(name)
         if node_struct is None:
-            logging.error(f"Could not fetch node struct for {name}", exc_info=True)
+            # logging.error(f"Could not fetch node struct for {name}", exc_info=True)
             return []
         return node_struct.get("topics", [])
 
