@@ -1,3 +1,10 @@
+"""Example service client.
+
+This script is an example of a client that can connect to the service server.
+The server to test this with is initialized and run from the script
+`axone/service_server.py`, which you can run directly to test the behaviour.
+"""
+
 import logging
 import random
 import socket

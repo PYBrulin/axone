@@ -11,8 +11,8 @@ from axone.node_process import AxoneNodeProcess
 
 
 class ExampleNodeSubscriber:
-    """
-    Example Node to subscribe to messages incoming from other nodes
+    """Example Node to subscribe to messages sent by other nodes.
+
     Three subscribers are registered to listen to the topics from the node "example_publisher":
     - topic_published_once : subscribe to a topic published once
     - topic_published_rate : subscribe to a topic published at a fixed rate

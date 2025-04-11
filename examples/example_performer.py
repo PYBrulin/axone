@@ -10,15 +10,18 @@ from axone.node_process import AxoneNodeProcess
 
 
 class ExampleNodePerformer:
-    """
-    Example Node to register services and parameters
-    This node functions can be called by the node "example_actuator"
+    """Example Node to register services and parameters.
+
+    This node is able to receive call made by the node "example_actuator".
+    Four services are listed in this example, which take several arguments and
+    can, depending on the function, return a value.
     """
 
     def __init__(self, use_process: bool = False, use_shared_memory: bool = False) -> None:
         self.use_process = use_process
         self.use_shared_memory = use_shared_memory
         self.method = Method.SOCKET if not self.use_shared_memory else Method.SHARED_MEMORY
+
         # Class parameters
         self.parameters = {"x": 1, "y": 2, "z": 3}
 

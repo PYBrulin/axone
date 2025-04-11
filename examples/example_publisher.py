@@ -31,8 +31,8 @@ class AStandaloneTopic(AxoneTopic):
 
 
 class ExampleNodePublisher:
-    """
-    Example Node to publish messages at different rates
+    """Example Node to publish messages at different rates.
+
     Three publishers are registered:
     - topic_published_once : publish a message once
     - topic_published_rate : publish a message at a fixed rate

@@ -31,6 +31,9 @@ try:
 except Exception as e:
     print(e)
     pass
+except KeyboardInterrupt:
+    print("KeyboardInterrupt")
+    pass
 finally:
     # Kill all processes
     for script in example_scripts:

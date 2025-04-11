@@ -11,9 +11,13 @@ from axone.node_process import AxoneNodeProcess
 
 
 class ExampleNodeActuator:
-    """
-    Example Node to call services of another node
-    This node functions can call the services of the node "example_performer"
+    """Example Node to call services of another node.
+
+    This node is able to call the services of the node "example_performer".
+    First it will try to find the node, then it will first call the "print"
+    service with a custom string created here. Then, if the node is standalone,
+    it will call the "move" service that send a 3d coordinate and expects an
+    answer, which will be awaited here for further processing.
     """
 
     def __init__(self, use_process: bool = False, use_shared_memory: bool = False) -> None:

@@ -97,6 +97,16 @@ class AxoneNode:
         """List all the nodes discovered using zeroconf."""
         return list(self.zeroconf_node.discovered_nodes.keys())
 
+    def dict_nodes(self) -> list[str]:
+        return self._dict_nodes()
+
+    def _dict_nodes(self) -> list[str]:
+        """List all the nodes discovered using zeroconf."""
+        ret = dict()
+        for node, info in self.zeroconf_node.discovered_nodes.items():
+            ret[node.split(info.type, 1)[0][:-1]] = info.decoded_properties
+        return ret
+
     def find_node_by_name(self, name: str) -> Optional[str]:
         return self._find_node_by_name(name=name)
 
@@ -104,7 +114,7 @@ class AxoneNode:
         """Search a node by name"""
         for node_name, info in self.zeroconf_node.discovered_nodes.items():
             if node_name.split(info.type, 1)[0][:-1] == name:
-                return info.properties[b"node_id"]
+                return info.decoded_properties["node_id"]
         return None
 
     def get_node_configuration(self, name: str, method: Optional[Method] = None):
@@ -117,7 +127,7 @@ class AxoneNode:
         if method == Method.SOCKET:
             for node_name, info in self.zeroconf_node.discovered_nodes.items():
                 if node_name.split(info.type, 1)[0][:-1] == name:
-                    return info.properties
+                    return info.decoded_properties
             return None
         elif method == Method.SHARED_MEMORY:
             node_id = self.find_node_by_name(name)
@@ -143,9 +153,9 @@ class AxoneNode:
         if node_struct is None:
             logging.error(f"Could not fetch node struct for {name}", exc_info=True)
             return None
-        services = node_struct.get(b"services", None)
+        services = node_struct.get("services", None)
         if services is not None:
-            return services.decode("utf-8").split(',')
+            return services.split(',')
         return None
 
     def get_node_services_server_port(self, name: str):

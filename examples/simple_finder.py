@@ -27,20 +27,22 @@ class ExampleNodeFinder:
             self.node.start()
 
             while True:
-                print("=" * 50)
-                node_list = self.node.list_nodes()
+                print("\033c", end="")  # flush the terminal
+                node_list = self.node.dict_nodes()
                 print("Node lists:\n\t" + "\n\t".join(f"{k}: {v}" for k, v in node_list.items()))
-                # print(
-                #     "Searching for example_publisher:",
-                #     "Found" if self.node.find_node_by_name('example_publisher') is not None else "Not Found",
-                # )
-                # print("Services available:", self.node.is_node_advertising_services("example_publisher"))
 
-                for node_id, node_name in node_list.items():
+                print()
+                print(
+                    "Searching for example_publisher:",
+                    "Found !!!" if self.node.find_node_by_name('example_publisher') is not None else "Not Found ...",
+                )
+                print("Services available:", self.node.is_node_advertising_services("example_publisher"))
+
+                for node_name, node_infos in node_list.items():
                     print()
-                    print("ID:", node_id, "Node:", node_name)
+                    print("ID:", node_infos.get("node_id"), "Node:", node_name)
                     node_config = self.node.get_node_configuration(node_name)
-                    print("Configuration:", "\n\t".join(f"{k}: {v}" for k, v in node_config.items()))
+                    print("Configuration:\n\t", "\n\t".join(f"{k}: {v}" for k, v in node_config.items()))
                     print("Services available:", self.node.is_node_advertising_services(node_name))
                 time.sleep(1)
 

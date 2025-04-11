@@ -1,3 +1,5 @@
+"""Simple zeroconf browser to list discoverable AxoneNode and their topics."""
+
 import logging
 import socket
 import time
@@ -30,6 +32,7 @@ def main() -> None:
                             + f" Address: {socket.inet_ntoa(info.addresses[0])},"
                             + f" Port: {info.port}, Properties: {info.properties}"
                         )
+
                 print('\nDiscovered topics:')
                 for name, info in listener.nodes.items():
                     if name.endswith("._axone._udp.local."):
