@@ -40,14 +40,19 @@ class ZeroconfNode:
         self.listener = ZeroconfListener()
         self.service_type = "_axone._tcp.local."
         self.service_name = f"{self.node_name}.{self.service_type}"
+        self.service_address = None
         self.hide_services = kwargs.get("hide_services", False)
         self.interface = interface
         self.topics = kwargs.get("topics", [])
 
-        self.properties = {"node_id": self.node_id, "topics": ",".join(self.topics)}
+        # Advertised properties of the node
+        self.properties = {"node_id": self.node_id}
 
-        if not self.hide_services:
-            _services = kwargs.get("services", {})
+        if self.topics:
+            self.properties = {**self.properties, **{"topics": ",".join(self.topics)}}
+
+        _services = kwargs.get("services", {})
+        if not self.hide_services and _services:
             self.services = []
             for service, _ in _services.items():
                 if callable(service):
@@ -58,11 +63,11 @@ class ZeroconfNode:
                     raise TypeError(f"service {service} is not a string or a function.")
             self.properties = {**self.properties, **{"services": ",".join(self.services)}}
 
-        new_ip_address = get_ip_address_for_interface(self.interface)
+        self.service_address = get_ip_address_for_interface(self.interface)
         self.info = ServiceInfo(
             self.service_type,
             self.service_name,
-            addresses=[socket.inet_aton(new_ip_address)],
+            addresses=[socket.inet_aton(self.service_address)],
             port=self.service_port,
             properties=self.properties,
         )
@@ -81,13 +86,13 @@ class ZeroconfNode:
         counter = 1
         while True:
             new_service_name = f"{self.node_name}-{counter}.{self.service_type}"
-            new_ip_address = get_ip_address_for_interface(self.interface)
+            self.service_address = get_ip_address_for_interface(self.interface)
             new_info = ServiceInfo(
                 self.service_type,
                 new_service_name,
-                addresses=[socket.inet_aton(new_ip_address)],
+                addresses=[socket.inet_aton(self.service_address)],
                 port=self.service_port,
-                properties={"node_id": self.node_id, "topics": ",".join(self.topics)},
+                properties=self.properties,
             )
             try:
                 self.zeroconf.register_service(new_info)
@@ -104,14 +109,21 @@ class ZeroconfNode:
         self.zeroconf.close()
         logging.info(f"Node {self.node_name} stopped advertising on zeroconf")
 
-    def update_topics(self, topics: list[str]) -> None:
+    def update_topics(self, published_topics: list[str]) -> None:
         """Update the topics in the zeroconf properties."""
-        self.topics = topics
-        self.properties["topics"] = ",".join(self.topics).encode("utf-8")
-        self.info.properties = self.properties
-        logging.info(f"Updating service with new topics: {self.info.properties['topics']}")
-        self.zeroconf.update_service(self.info)
-        logging.info(f"Updated topics for node {self.node_name} on zeroconf: {self.topics}")
+        try:
+            self.topics = published_topics
+            if self.topics:
+                self.properties = {**self.properties, **{"topics": ",".join(self.topics).encode("utf-8")}}
+            elif hasattr(self.properties, "topics"):
+                del self.properties["topics"]
+            self.info._set_properties(self.properties)
+            # I should not be using the above private method, but i couldn't find any alternative and it works for this use.
+            # I am enclosing this method in a try/except for safety because of this.
+            self.zeroconf.update_service(self.info)
+            logging.info(f"Updated topics for node {self.node_name} on zeroconf: {self.topics}")
+        except Exception as e:
+            logging.error(f"Unable to update advertised topics: {e}", exc_info=True)
 
     def discover_nodes(self) -> Dict[str, ServiceInfo]:
         """Discover nodes using zeroconf."""

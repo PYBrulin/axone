@@ -300,7 +300,7 @@ class AxoneNode:
     def update_zeroconf_topics(self) -> None:
         """Update the topics in the zeroconf properties."""
         topics = {name: pub._publisher_port for name, pub in self.publishers.items()}
-        self.zeroconf_node.update_topics(topics)
+        self.zeroconf_node.update_topics(published_topics=topics)
 
     # endregion Publisher functions
 

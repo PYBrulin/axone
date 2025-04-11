@@ -9,7 +9,7 @@ from axone.zeroconf_node import ZeroconfListener
 logging.basicConfig(level=logging.INFO)
 
 
-def main():
+def main() -> None:
     zeroconf = Zeroconf()
     listener = ZeroconfListener()
     browser = ServiceBrowser(zeroconf, ["_axone._tcp.local.", "_axone._udp.local."], listener)  # noqa F841
@@ -17,8 +17,7 @@ def main():
     try:
         while True:
             time.sleep(1)
-            # flush the terminal
-            print("\033c", end="")
+            print("\033c", end="")  # flush the terminal
 
             if not listener.nodes:
                 print("No nodes discovered yet...")
