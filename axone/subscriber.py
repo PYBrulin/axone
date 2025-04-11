@@ -9,8 +9,8 @@ from typing import Any, Callable, List, Optional
 from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
 
 from axone.axone_struct import AxoneStruct
+from axone.common import generate_uuid
 from axone.enums import Method
-from axone.utils import generate_uuid
 
 
 class Subscription:

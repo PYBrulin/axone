@@ -5,7 +5,7 @@ import time
 from typing import NoReturn
 
 from axone.custom_logger import setup_logger
-from axone.node import Node
+from axone.node import AxoneNode
 
 setup_logger(debug=False)
 
@@ -15,7 +15,7 @@ class SimpleServerNode:
 
     def __init__(self) -> None:
         # Register node
-        self.node = Node(
+        self.node = AxoneNode(
             name="simple_server",
             memory_endpoint="ExampleNodeMemory",
             memory_size=4096,

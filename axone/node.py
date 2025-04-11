@@ -11,12 +11,12 @@ from typing import Callable, Dict, Optional
 import netifaces
 
 from axone.axone_struct import AxoneStruct, standard_data_decoding, standard_data_encoding
+from axone.common import find_free_port, generate_uuid, timeit_if_debug
 from axone.enums import Method
 from axone.publisher import Publisher
 from axone.service_server import ServiceServer, recv_msg, send_msg
 from axone.shared_memory import AxoneSharedMemory
 from axone.subscriber import Subscription
-from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 from axone.zeroconf_node import ZeroconfNode
 
 
@@ -63,10 +63,14 @@ class AxoneNode:
         if self.name == "":
             raise ValueError("Node name cannot be empty.")
 
-        # Zeroconf parameters
+        # Services parameters
+        self.service_server = None
         self.service_port = kwargs.get("port", find_free_port())
+        self.hide_services = kwargs.get("hide_services", False)
+        self._services = kwargs.get("services", None)
+        self.setup_service_server()
 
-        # Create the zeroconf node
+        # Zeroconf parameters
         self.zeroconf_node = ZeroconfNode(
             name=self.name,
             node_id=self.node_id,
@@ -76,11 +80,6 @@ class AxoneNode:
         )
         self.zeroconf_node.advertise()
         self.discovered_nodes = {}
-
-        # Services parameters
-        self.service_server = None
-        self._services = kwargs.get("services", None)
-        self.setup_service_server()
 
         # Lists of publishers, subscribers and services
         self._publishers: Dict[str, Publisher] = {}
@@ -390,8 +389,12 @@ class AxoneNode:
         self.service_server = ServiceServer(
             services=self.services,
             node_uuid=self.node_id,
+            method=self.default_method,
+            service_interface=self.default_publisher_interface,
+            server_port=self.service_port,
         )
-        logging.info(f"Starting service server for node {self.node_id}:{self.name} with {len(self.services)} services.")
+        # logging.info(f"Starting service server for node {self.node_id}:{self.name} with {len(self.services)} services.")
+        self.service_server.start()
 
     def _call_service(
         self,
@@ -453,12 +456,12 @@ class AxoneNode:
             **kwargs,
         )
 
-        logging.info(f'sending {message!r}')
+        logging.debug(f'sending {message!r}')
         send_msg(sock, message)
 
         # Look for the response
         data = recv_msg(sock)
-        logging.info(f'received {standard_data_decoding(data)!r}')
+        logging.debug(f'received {standard_data_decoding(data)!r}')
 
         self.logger.debug(
             f"Called service {service_name} on node {dest_node_id}.",
@@ -503,6 +506,10 @@ class AxoneNode:
         Stop the node server and clean up resources.
         """
         self._server_should_run = False
+
+        # Stop the service server
+        if self.service_server is not None:
+            self.service_server.stop()
 
         # Cancel all running tasks
         for task in self.running_tasks.values():

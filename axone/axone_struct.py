@@ -1,10 +1,9 @@
 import inspect
 import logging
 import struct
-import time
 from typing import Any, Iterator, Optional
 
-from axone.utils import timeit_if_debug
+from axone.common import timeit_if_debug
 
 BYTES_PER_INT = struct.calcsize('i')  # TODO: Change to numpy dtypes
 
@@ -118,6 +117,14 @@ def standard_data_encoding(*args, **kwargs) -> bytes:
                 else:
                     raise ValueError(f"Unknown list item type {type(item)} for key-value pair\n\t{key}:'{item}'")
 
+        elif isinstance(value, dict):
+            # Recursive encoding for dictionaries
+            output += b'm'  # 'm' for map/dict
+            encoded_dict = standard_data_encoding(**value)
+            output += struct.pack('I', len(encoded_dict))
+            output += encoded_dict
+            logging.debug(f"Encoding dictionary {key} with {len(value)} items")
+
         # ! AxoneStructs are not supported here
         # elif isinstance(value, AxoneStruct):
         #     output += b"A"
@@ -196,6 +203,12 @@ def standard_data_decoding(data) -> dict:
                 else:
                     raise ValueError(f"Unknown list item type {item_type}")
                 value.append(item)
+
+        elif attr_type == 'm':  # Dictionary type
+            dict_len = struct.unpack('I', bytes(next(data_iter) for _ in range(struct.calcsize('I'))))[0]
+            dict_data = bytes(next(data_iter) for _ in range(dict_len))
+            value = standard_data_decoding(dict_data)  # Recursive decoding
+            logging.debug(f"Decoded dictionary {value} for attribute {key}")
 
         # ! AxoneStructs are not supported here
         # elif attr_type == 'A':
@@ -571,6 +584,8 @@ class AxoneService(AxoneStruct):
 if __name__ == "__main__":
     # Several examples of how to use the AxoneStruct class
 
+    import time
+
     from axone.custom_logger import setup_logger
 
     setup_logger(debug=True)
@@ -644,6 +659,21 @@ if __name__ == "__main__":
         print("xyz", type(topic2.xyz), str(topic2.xyz))
         print("xyz.x", type(topic2.xyz.x), topic2.xyz.x)
         print("h", type(topic2.h), topic2.h)
+
+    # data = {
+    #     "key1": 123,
+    #     "key2": {
+    #         "nested_key1": "value1",
+    #         "nested_key2": 3.14,
+    #         "nested_key3": [True, False, 42],
+    #     },
+    #     "key3": "hello",
+    # }
+
+    # encoded_data = standard_data_encoding(**data)
+    # print(encoded_data)
+    # decoded_data = standard_data_decoding(encoded_data)
+    # print(decoded_data)
 
     # # Service
     # print("\nServices")

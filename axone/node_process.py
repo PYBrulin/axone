@@ -7,12 +7,12 @@ from typing import Any, Callable, Dict, Optional
 import netifaces
 
 from axone.axone_struct import AxoneStruct
+from axone.common import find_free_port, generate_uuid, timeit_if_debug
 from axone.custom_logger import CustomFormatter  # noqa
 from axone.enums import Method
 from axone.node import AxoneNode
 from axone.publisher import Publisher
 from axone.subscriber import Subscription
-from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 from axone.zeroconf_node import ZeroconfNode
 
 

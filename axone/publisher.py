@@ -8,8 +8,8 @@ import netifaces
 from zeroconf import ServiceInfo, Zeroconf
 
 from axone.axone_struct import AxoneStruct
+from axone.common import find_free_port, generate_uuid, get_ip_address_for_interface, timeit_if_debug
 from axone.enums import Method
-from axone.utils import find_free_port, generate_uuid, timeit_if_debug
 
 
 class Publisher:
@@ -35,7 +35,7 @@ class Publisher:
         self._source: str = source if source is not None else "unknown"
         self._rate: float = float(rate)
         self._last_update: float = 0
-        self._method: str = method
+        self._method: Method = method
         self._publisher_interface = publisher_interface
         self._publisher_address = publisher_address
         self._publisher_port_range = publisher_port_range
@@ -47,7 +47,7 @@ class Publisher:
             self._publisher_interface = "lo"
             self._publisher_address = "239.255.0.1"
 
-        self._interface_ip = self._get_ip_address(self._publisher_interface)
+        self._interface_ip = get_ip_address_for_interface(self._publisher_interface)
         logging.debug(f"Publisher interface IP address: {self._interface_ip}")
 
         self._uuid = generate_uuid(self._name)
@@ -90,11 +90,6 @@ class Publisher:
         self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self._interface_ip))
         self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
         logging.debug(f"Multicast UDP socket created at {self._publisher_address}:{self._publisher_port}")
-
-    def _get_ip_address(self, interface: str) -> str:
-        """Get the IP address of a specific network interface."""
-        addresses = netifaces.ifaddresses(interface)
-        return addresses[netifaces.AF_INET][0]['addr']
 
     def _register_service(self) -> None:
         desc = {

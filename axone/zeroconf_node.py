@@ -3,9 +3,10 @@ import socket
 import time
 from typing import Dict
 
-import netifaces
 from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
 from zeroconf._exceptions import NonUniqueNameException
+
+from axone.common import get_ip_address_for_interface
 
 
 class ZeroconfListener(ServiceListener):
@@ -39,26 +40,31 @@ class ZeroconfNode:
         self.listener = ZeroconfListener()
         self.service_type = "_axone._tcp.local."
         self.service_name = f"{self.node_name}.{self.service_type}"
+        self.hide_services = kwargs.get("hide_services", False)
         self.interface = interface
         self.topics = kwargs.get("topics", [])
 
-        _services = kwargs.get("services", {})
-        self.services = []
-        for service, _ in _services.items():
-            if callable(service):
-                self.services.append(service.__name__)
-            elif isinstance(service, str):
-                self.services.append(service)  # ? What is the point of this?
-            else:
-                raise TypeError(f"service {service} is not a string or a function.")
+        self.properties = {"node_id": self.node_id, "topics": ",".join(self.topics)}
 
-        new_ip_address = self._get_ip_address(self.interface)
+        if not self.hide_services:
+            _services = kwargs.get("services", {})
+            self.services = []
+            for service, _ in _services.items():
+                if callable(service):
+                    self.services.append(service.__name__)
+                elif isinstance(service, str):
+                    self.services.append(service)  # ? What is the point of this?
+                else:
+                    raise TypeError(f"service {service} is not a string or a function.")
+            self.properties = {**self.properties, **{"services": ",".join(self.services)}}
+
+        new_ip_address = get_ip_address_for_interface(self.interface)
         self.info = ServiceInfo(
             self.service_type,
             self.service_name,
             addresses=[socket.inet_aton(new_ip_address)],
             port=self.service_port,
-            properties={"node_id": self.node_id, "topics": ",".join(self.topics), "services": ",".join(self.services)},
+            properties=self.properties,
         )
 
     def advertise(self) -> None:
@@ -70,19 +76,12 @@ class ZeroconfNode:
             logging.warning(f"Service name {self.service_name} is not unique. Trying a new name.")
             self._handle_non_unique_name_exception()
 
-    def _get_ip_address(self, interface: str) -> str:
-        """Get the IP address of a specific network interface."""
-        logging.debug(f"Getting IP address for interface {interface}")
-        addresses = netifaces.ifaddresses(interface)
-        logging.debug(f"Addresses: {addresses}")
-        return addresses[netifaces.AF_INET][0]['addr']
-
     def _handle_non_unique_name_exception(self) -> None:
         """Handle NonUniqueNameException by modifying the service name to make it unique."""
         counter = 1
         while True:
             new_service_name = f"{self.node_name}-{counter}.{self.service_type}"
-            new_ip_address = self._get_ip_address(self.interface)
+            new_ip_address = get_ip_address_for_interface(self.interface)
             new_info = ServiceInfo(
                 self.service_type,
                 new_service_name,
@@ -108,7 +107,8 @@ class ZeroconfNode:
     def update_topics(self, topics: list[str]) -> None:
         """Update the topics in the zeroconf properties."""
         self.topics = topics
-        self.info.properties["topics"] = ",".join(self.topics).encode("utf-8")
+        self.properties["topics"] = ",".join(self.topics).encode("utf-8")
+        self.info.properties = self.properties
         logging.info(f"Updating service with new topics: {self.info.properties['topics']}")
         self.zeroconf.update_service(self.info)
         logging.info(f"Updated topics for node {self.node_name} on zeroconf: {self.topics}")

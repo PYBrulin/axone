@@ -4,7 +4,7 @@ from multiprocessing.shared_memory import SharedMemory
 from typing import Optional
 
 from axone.axone_struct import AxoneService
-from axone.utils import generate_uuid
+from axone.common import generate_uuid
 
 
 class Service:

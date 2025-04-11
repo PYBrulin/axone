@@ -27,7 +27,7 @@ class ExampleNodePerformer:
             self.print: {"message": "str"},
             self.move: {"x": "float", "y": "float", "z": "float"},
             self.stop: {},
-            self.simple_addition: {"a": "float", "b": "float"},
+            self.simple_addition: ["a", "b"],
         }
 
         # Register node
@@ -43,6 +43,7 @@ class ExampleNodePerformer:
         )
 
     # region service callbacks
+
     def print(self, message: str) -> None:
         print(message)
 
@@ -60,7 +61,7 @@ class ExampleNodePerformer:
     def simple_addition(self, a, b):
         return a + b
 
-    # endregion
+    # endregion service callbacks
 
     def run(self) -> NoReturn:
         # services are already pre-registered in the node

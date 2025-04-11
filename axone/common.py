@@ -5,6 +5,8 @@ import string
 import time
 from typing import Optional, Tuple
 
+import netifaces
+
 
 def generate_uuid(input_string: str) -> str:
     """Generate a unique id"""
@@ -52,6 +54,14 @@ def find_free_port(port_range: Optional[Tuple[int, int]] = None) -> int:
             s.bind(('', 0))  # Bind to a free port provided by the host OS.
             ret = int(s.getsockname()[1])  # Return the port number assigned.
     return ret
+
+
+def get_ip_address_for_interface(interface: str) -> str:
+    """Get the IP address of a specific network interface."""
+    logging.debug(f"Getting IP address for interface {interface}")
+    addresses = netifaces.ifaddresses(interface)
+    logging.debug(f"Addresses: {addresses}")
+    return addresses[netifaces.AF_INET][0]['addr']
 
 
 if __name__ == "__main__":

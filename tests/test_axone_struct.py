@@ -8,29 +8,28 @@ from axone.axone_struct import AxoneStruct, AxoneTopic, standard_data_decoding, 
 
 
 class ATopicPassedToAxone(AxoneTopic):
-    pass
-    # a: bool = True
-    # b: int = 0
-    # c: int = 1
-    # d: int = 2
-    # e: float = 1.23456789
-    # f: float = 1e9
-    # g: float = 0.00001357
-    # h: str = "hello"
+    a: bool = True
+    b: int = 0
+    c: int = 1
+    d: int = 2
+    e: float = 1.23456789
+    f: float = 1e9
+    g: float = 0.00001357
+    h: str = "hello"
 
     # xyz: SubMessage = SubMessage()
 
-    # an_decently_long_attribute_name: str = "world"
+    an_decently_long_attribute_name: str = "world"
     # # an_overly_long_attribute_name_that_should_raise_an_error_if_attempted_to_be_encoded_but_yeah_let_s_try_it_anyway_gosh_this_is_longer_than_i_expected_what_a_long_name_i_must_be_crazy_to_have_thought_of_this: (  # noqa: E501
     # #     str
     # # ) = "!"
 
-    # a_callable: callable = lambda x: 1 + 1
+    a_callable: callable = lambda x: 1 + 1
 
-    # def _update_message(self) -> None:
-    #     return f"Hello message_callback from topic_published_rate_func {2 * time.time()}"
+    def _update_message(self) -> None:
+        return f"Hello message_callback from topic_published_rate_func {2 * time.time()}"
 
-    # message_callback: str = _update_message
+    message_callback: str = _update_message
 
     # # def print_within(self, input_string) -> None:
     # #     print(input_string)
@@ -221,6 +220,22 @@ class TestStandardDataEncoding(unittest.TestCase):
             b'\x01\x00\x00\x00n15slist_of_stringsl\x02\x00\x00\x00n5shellon5sworld',
         )
 
+    def test_encode_dict(self) -> None:
+        self.assertEqual(
+            standard_data_encoding(
+                **{
+                    "key1": 123,
+                    "key2": {
+                        "nested_key1": "value1",
+                        "nested_key2": 3.14,
+                        "nested_key3": [True, False, 42],
+                    },
+                    "key3": "hello",
+                }
+            ),
+            b'\x03\x00\x00\x00n4skey1i{\x00\x00\x00n4skey2mQ\x00\x00\x00\x03\x00\x00\x00n11snested_key1n6svalue1n11snested_key2d\x1f\x85\xebQ\xb8\x1e\t@n11snested_key3l\x03\x00\x00\x00?\x01?\x00i*\x00\x00\x00n4skey3n5shello',
+        )
+
     def test_encode_empty_attribute(self) -> None:
         self.assertEqual(standard_data_encoding(a=None), b'\x01\x00\x00\x00n1sax\x00')
 
@@ -254,6 +269,22 @@ class TestStandardDataEncoding(unittest.TestCase):
         self.assertEqual(
             standard_data_decoding(b'\x01\x00\x00\x00n15slist_of_stringsl\x02\x00\x00\x00n5shellon5sworld'),
             {'list_of_strings': ['hello', 'world']},
+        )
+
+    def test_decode_dict(self) -> None:
+        self.assertEqual(
+            standard_data_decoding(
+                b'\x03\x00\x00\x00n4skey1i{\x00\x00\x00n4skey2mQ\x00\x00\x00\x03\x00\x00\x00n11snested_key1n6svalue1n11snested_key2d\x1f\x85\xebQ\xb8\x1e\t@n11snested_key3l\x03\x00\x00\x00?\x01?\x00i*\x00\x00\x00n4skey3n5shello'
+            ),
+            {
+                "key1": 123,
+                "key2": {
+                    "nested_key1": "value1",
+                    "nested_key2": 3.14,
+                    "nested_key3": [True, False, 42],
+                },
+                "key3": "hello",
+            },
         )
 
     def test_decode_empty_attribute(self) -> None:

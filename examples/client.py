@@ -61,18 +61,18 @@ try:
         # Send data
         # message = b'logging.info_message(This is the message.  It will be repeated.)'
 
-        func_choice = random.randint(0, 2)
+        func_choice = random.randint(0, 3)
         print(func_choice)
         if func_choice == 0:
             message = standard_data_encoding(a=random.randint(1, 100000), b=random.random(), func="simple_addition")
         elif func_choice == 1:
             message = standard_data_encoding(
-                message="".join(random.choices(string.ascii_letters + string.digits, k=50)), func="print_message"
+                message="".join(random.choices(string.ascii_letters + string.digits, k=50)), func="print"
             )
         elif func_choice == 2:
-            message = standard_data_encoding(
-                message="".join(random.choices(string.ascii_letters + string.digits, k=50)), func="print_secondary"
-            )
+            message = standard_data_encoding(x=random.random(), y=random.random(), z=random.random(), func="move")
+        elif func_choice == 3:
+            message = standard_data_encoding(func="stop")
 
         logging.info(f'sending {message!r}')
         send_msg(sock, message)

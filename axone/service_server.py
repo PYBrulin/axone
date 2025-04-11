@@ -4,9 +4,13 @@ import socket
 import struct
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, Optional
+
+import netifaces
 
 from axone.axone_struct import standard_data_decoding, standard_data_encoding
+from axone.common import get_ip_address_for_interface
+from axone.enums import Method
 
 
 def send_msg(sock, msg) -> None:
@@ -50,10 +54,22 @@ class ServiceServer:
         self,
         services,  # dict[callable | str, dict[str, str | list[str]]],
         node_uuid: str,
+        method: Optional[Method] = None,
+        service_interface: str = "lo",  # Network interface for TCP
+        server_port: Optional[int] = None,  # Network port for the TCP. Can be set manually or set by the server itself.
     ) -> None:
-        self._server_port = None
         self.sock = None
         self.node_uuid = node_uuid
+        self.method = method if method is not None and method in Method else Method.SOCKET
+        self._server_interface = service_interface
+        self._server_port = server_port
+        self._server_address = None
+
+        # Check if the network interface exists
+        if self._server_interface not in netifaces.interfaces():
+            logging.error(f"Network interface '{self._server_interface}' does not exist. Defaulting to 'lo'")
+            self._server_interface = "lo"
+        self._server_address = get_ip_address_for_interface(self._server_interface)
 
         # format the services dictionary
         self._services_map = {}
@@ -66,15 +82,13 @@ class ServiceServer:
             else:
                 raise TypeError(f"service {service} is not a string or a function.")
 
-        # print(self._services_map)
-
     @property
     def services_keys(self) -> list[str]:
         return list(self._services_map.keys())
 
     @property
     def server_port(self) -> int:
-        if sys.platform != 'win32':
+        if self.method == Method.SHARED_MEMORY and sys.platform != 'win32':
             # Use the node_uuid as the server port when using UNIX sockets
             self._server_port = self.node_uuid
         else:
@@ -145,7 +159,7 @@ class ServiceServer:
             return False, None
 
     def start(self) -> None:
-        if sys.platform != 'win32':
+        if self.method == Method.SHARED_MEMORY and sys.platform != 'win32':
             family = socket.AF_UNIX
             server_address = f'/tmp/{self.server_port}_socket'
 
@@ -155,13 +169,13 @@ class ServiceServer:
             except OSError:
                 if os.path.exists(server_address):
                     raise
-            logging.info(f'starting up on UNIX socket {server_address}')
+            logging.info(f'Service server starting up on UNIX socket {server_address}')
         else:
             family = socket.AF_INET
             server_address = ('localhost', int(self.server_port))
-            logging.info('starting up on TCP socket {}:{}'.format(*server_address))
+            logging.info('Service server starting up on TCP socket {}:{}'.format(*server_address))
 
-        # Create a UDS socket
+        # Create a TCP or UDS socket
         self.sock = socket.socket(family, socket.SOCK_STREAM)
 
         # Bind the socket to the address
@@ -188,23 +202,23 @@ class ServiceServer:
             try:
                 connection, client_address = self.sock.accept()
                 with connection:  # Ensures the socket is closed after block execution
-                    logging.info(f'Connection from {client_address}')
+                    logging.debug(f'Connection from {client_address}')
                     while True:
                         data = recv_msg(connection)
                         if data:
-                            logging.info(f'Received {data!r}')
+                            logging.debug(f'Received {data!r}')
                             ret, out = self.find_and_call_service(data)
-                            logging.info('Sending data back to the client')
+                            logging.debug('Sending data back to the client')
                             send_msg(connection, standard_data_encoding(ret=ret, out=out))
                         else:
-                            logging.info(f'No more data from {client_address}')
+                            logging.debug(f'No more data from {client_address}')
                             break
             except socket.timeout:
                 continue  # Handle specific exceptions as needed
             except Exception as e:
                 logging.error(f"Server error: {e}", exc_info=True)
                 break  # Or handle as appropriate
-        logging.info("Node server stopped")
+        logging.info("Service server stopped")
 
 
 if __name__ == "__main__":
