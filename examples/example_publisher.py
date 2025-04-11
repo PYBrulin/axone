@@ -47,6 +47,7 @@ class ExampleNodePublisher:
         NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
         self.node = NodeClass(
             name="example_publisher",
+            method=self.method,
             centralized_memory_endpoint="ExampleNodeMemory",
             # Here we load a config file next to this script
             config_file=os.path.join(os.path.dirname(__file__), "axone.json"),

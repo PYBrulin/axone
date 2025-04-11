@@ -11,6 +11,10 @@ The package provides basic functionalities similar to ROS, such as:
 - **Service/Client**: A node can provide a service, and other nodes can call this service.
 <!-- - **Parameter Server (WIP)**: A node can store parameters on the parameter server, and other nodes can retrieve them. -->
 
+Shared memory was the first method supported in this work. While there are a number of good points to advocate (ease of use, privacy through local storage, etc.), shared memory also cause several issues that _need_ to be understood before using them in production. Especially the clean up of shared memory... UDP sockets were added in response to these problems. Sockets are more flexible and can easily extend the use-cases with external communications. As of today, the socket method shall be prefered.
+
+The package name comes from the word 'axon':
+
 > axon, portion of a nerve cell (neuron) that carries nerve impulses away from the cell body. A neuron typically has one axon that connects it with other neurons or with muscle or gland cells.
 >
 > Britannica, The Editors of Encyclopaedia. "axon". Encyclopedia Britannica, 6 May. 2024, https://www.britannica.com/science/axon.

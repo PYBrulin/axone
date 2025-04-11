@@ -47,11 +47,14 @@ class Subscription:
         self._timeout = timeout
         self._stop_event = threading.Event()
 
-        self._zeroconf = Zeroconf()
-        self._service_browser = ServiceBrowser(self._zeroconf, "_axone._udp.local.", handlers=[self._on_service_state_change])
-
-        if self._method == Method.SHARED_MEMORY:
+        if self._method is Method.SOCKET:
+            self._zeroconf = Zeroconf()
+            self._service_browser = ServiceBrowser(
+                self._zeroconf, "_axone._udp.local.", handlers=[self._on_service_state_change]
+            )
+        elif self._method is Method.SHARED_MEMORY:
             self._connect_shared_memory()
+            self._start_listening_thread()
 
     def _connect_shared_memory(self) -> None:
         """Connect to the shared memory of the topic."""
@@ -110,7 +113,7 @@ class Subscription:
                 f"Service {name} at {new_multicast_ip_address}:{new_multicast_port} "
                 + f"{'added' if state_change == ServiceStateChange.Added else 'updated'}"
             )
-            if self._method == Method.SOCKET:
+            if self._method is Method.SOCKET:
                 if (
                     new_multicast_group != self._multicast_group
                     or new_multicast_port != self._multicast_port
@@ -245,9 +248,9 @@ class Subscription:
         """Fetch and decode the latest message from the topic."""
         self._last_timestamp = time.time()
 
-        if self._method == Method.SHARED_MEMORY:
+        if self._method is Method.SHARED_MEMORY:
             encoded = self._subscribe_shared_memory()
-        elif self._method == Method.SOCKET:
+        elif self._method is Method.SOCKET:
             encoded = self._subscribe_socket_with_retries()
 
         if encoded:
@@ -260,6 +263,11 @@ class Subscription:
 
             if self.callbacks:
                 self.call(self._topic)
+
+            if self._method is Method.SHARED_MEMORY:
+                # Manually wait for next expected iteration if method is shm
+                time.sleep(max(0, float(1 / self._topic_rate) - (time.time() - self._last_timestamp)))
+                # ! Not precise at all...
 
     def _subscribe_shared_memory(self) -> Optional[bytes]:
         """Subscribe to the shared memory."""
@@ -306,17 +314,18 @@ class Subscription:
         """Stop the subscription."""
         self._stop_event.set()  # Signal the thread to stop
 
-        if self._method == Method.SHARED_MEMORY and self._memory is not None:
+        if self._method is Method.SHARED_MEMORY and self._memory is not None:
             try:
                 self._memory.close()
             except FileNotFoundError:
                 logging.error(f"Shared memory {self._uuid} not found")
-        elif self._method == Method.SOCKET and self._socket is not None:
+        elif self._method is Method.SOCKET and self._socket is not None:
             self._socket.close()
 
         self._stop_listening_thread()  # Ensure the listening thread is stopped
 
-        self._service_browser.cancel()
-        self._zeroconf.close()
+        if self._method is Method.SOCKET:
+            self._service_browser.cancel()
+            self._zeroconf.close()
 
         logging.debug(f"Subscription {self._name} deleted")

@@ -88,7 +88,7 @@ class ServiceServer:
 
     @property
     def server_port(self) -> int:
-        if self.method == Method.SHARED_MEMORY and sys.platform != 'win32':
+        if self.method is Method.SHARED_MEMORY and sys.platform != 'win32':
             # Use the node_uuid as the server port when using UNIX sockets
             self._server_port = self.node_uuid
         else:
@@ -159,7 +159,7 @@ class ServiceServer:
             return False, None
 
     def start(self) -> None:
-        if self.method == Method.SHARED_MEMORY and sys.platform != 'win32':
+        if self.method is Method.SHARED_MEMORY and sys.platform != 'win32':
             family = socket.AF_UNIX
             server_address = f'/tmp/{self.server_port}_socket'
 

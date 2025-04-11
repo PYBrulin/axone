@@ -52,7 +52,7 @@ class AxoneNodeProcess(AxoneNode):
         if self.default_method not in Method:
             logging.error(f"Invalid method: {self.default_method}. Using Method.SOCKET instead.")
             self.default_method = Method.SOCKET
-        if self.default_method == Method.SHARED_MEMORY:
+        if self.default_method is Method.SHARED_MEMORY:
             raise NotImplementedError("Regression. Shared Memory are not supported anymore at the moment.")
 
         # Default publisher parameters
