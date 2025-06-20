@@ -102,7 +102,11 @@ class Subscription:
         """Handle service added or updated state."""
         info = zeroconf.get_service_info(service_type, name)
         if info and info.properties.get(b'name').decode('utf-8') == self._name:
-            new_multicast_group = socket.inet_ntoa(info.addresses[0])
+            new_multicast_group = (
+                info.properties.get(b'multicast_group').decode('utf-8')
+                if b'multicast_group' in info.properties
+                else socket.inet_ntoa(info.addresses[0])
+            )
             new_multicast_port = info.port
             new_multicast_ip_address = (
                 info.properties.get(b'ip_address').decode('utf-8') if b'ip_address' in info.properties else None
@@ -166,7 +170,7 @@ class Subscription:
                 self._create_socket()
                 return
             except OSError as e:
-                logging.warning(f"Failed to bind socket on attempt {retries + 1}/{self._max_retries}: {e}")
+                logging.warning(f"Failed to bind socket on attempt {retries + 1}/{self._max_retries}: {e}", exc_info=True)
                 retries += 1
                 time.sleep(self._retry_interval)
         raise RuntimeError(f"Failed to bind socket after {self._max_retries} attempts")
