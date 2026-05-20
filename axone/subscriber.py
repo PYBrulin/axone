@@ -48,6 +48,7 @@ class Subscription:
         self._multicast_interface_ip = ""
         self._joined_multicast = False  # Flag to indicate if multicast group is joined
         self._timeout = timeout
+        self._timeout_margin = 1.2
         self._stop_event = threading.Event()
 
         if self._method is Method.SOCKET:
@@ -186,7 +187,7 @@ class Subscription:
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._socket.settimeout(self._timeout)
+        self._socket.settimeout(self._effective_timeout())
         self._socket.bind(('', self._multicast_port))
 
         # mreq = struct.pack('4sL', group, socket.INADDR_ANY)
@@ -201,6 +202,19 @@ class Subscription:
             + f"on interface {self._multicast_interface_ip}"
         )
         self._joined_multicast = True
+
+    def _effective_timeout(self) -> float:
+        """Return an effective recv timeout based on known topic rate."""
+        if self._topic_rate is None or self._topic_rate <= 0:
+            return self._timeout
+        expected_period = 1.0 / self._topic_rate
+        return max(self._timeout, expected_period * self._timeout_margin)
+
+    def _update_socket_timeout_from_topic_rate(self) -> None:
+        """Update socket timeout without recreating the socket."""
+        if self._socket is None:
+            return
+        self._socket.settimeout(self._effective_timeout())
 
     @property
     def topic(self) -> str:
@@ -267,6 +281,7 @@ class Subscription:
             self._new_message = self._timestamp != self._last_timestamp
             self._last_timestamp = self._timestamp
             self._topic_rate = self._topic.rate_
+            self._update_socket_timeout_from_topic_rate()
 
             if self.callbacks:
                 self.call(self._topic)
@@ -290,7 +305,7 @@ class Subscription:
         while retries < self._max_retries and not self._stop_event.is_set():
             try:
                 return self._subscribe_socket()
-            except (OSError, TimeoutError) as e:
+            except OSError as e:
                 if self._stop_event.is_set():
                     break
                 logging.warning(f"Socket error {self._name} on attempt {retries + 1}/{self._max_retries}: {e}")
@@ -307,15 +322,14 @@ class Subscription:
         try:
             data, _ = self._socket.recvfrom(2048)  # Adjust buffer size as needed
             return data
-        except (OSError, TimeoutError) as e:
-            if self._topic_rate is None or self._topic_rate < 0:
-                # We are not expecting a specific rate, so just return None
+        except TimeoutError:
+            # No packet before timeout is expected for low-frequency publishers.
+            return None
+        except OSError as e:
+            if self._stop_event.is_set():
                 return None
-            elif self._stop_event.is_set():
-                return None
-            else:
-                logging.error(f"Socket error {self._name}: {e}")
-                raise
+            logging.error(f"Socket error {self._name}: {e}")
+            raise
 
     def stop(self) -> None:
         """Stop the subscription."""
