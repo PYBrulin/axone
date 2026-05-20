@@ -1,60 +1,53 @@
 name: Build
 
 on:
-  push:
-    branches:
-      - main
-      - devel
-      - stable
-    tags:
-      - "v*"
-  workflow_dispatch:
+    workflow_call:
 
 jobs:
-  build_wheels:
-    name: Build wheels
-    runs-on: ubuntu-latest
+    build_wheels:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch all history for all tags and branches
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0 # Fetch all history for all tags and branches
 
-      # Note: This step will overwrite the current version.py contained in this repository to keep it up-to-date during the build
-      - name: Retrieve version from git tags
-        id: version
-        run: |
-          echo "TAG_NAME=$(git describe --match "v*" --tags)" >> $GITHUB_OUTPUT
+            # Keep release title in sync with the latest matching tag
+            - name: Retrieve version from git tags
+              id: version
+              run: |
+                  echo "TAG_NAME=$(git describe --match \"v*\" --tags)" >> $GITHUB_OUTPUT
 
-      # Used to host cibuildwheel
-      - uses: actions/setup-python@v3
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: "3.10"
 
-      - name: Build wheels
-        run: python -m pip wheel -w dist .
+            - name: Build wheels
+              run: python -m pip wheel -w dist .
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          retention-days: 1
-          path: ./dist/*.whl
+            - name: Upload Artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  retention-days: 1
+                  path: ./dist/*.whl
 
-      # Pre-release (anything that is not a tag)
-      - name: Upload Pre-Release Binary
-        uses: "marvinpinto/action-automatic-releases@latest"
-        if: "!startsWith(github.ref, 'refs/tags/v')"
-        with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "latest"
-          prerelease: true
-          title: "Latest Release"
-          files: ./dist/*.whl
+            # Pre-release on non-tag refs
+            - name: Upload Pre-Release Binary
+              uses: marvinpinto/action-automatic-releases@latest
+              if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+              with:
+                  repo_token: ${{ secrets.GITHUB_TOKEN }}
+                  automatic_release_tag: latest
+                  prerelease: true
+                  title: Latest Release
+                  files: ./dist/*.whl
 
-      # Release (tagged version starting with v*)
-      - name: Upload Release Binary
-        uses: "marvinpinto/action-automatic-releases@latest"
-        if: "startsWith(github.ref, 'refs/tags/v')"
-        with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          prerelease: false
-          title: "Release ${{ steps.version.outputs.TAG_NAME }}"
-          files: ./dist/*.whl
+            # Stable release on tags starting with v
+            - name: Upload Release Binary
+              uses: marvinpinto/action-automatic-releases@latest
+              if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+              with:
+                  repo_token: ${{ secrets.GITHUB_TOKEN }}
+                  prerelease: false
+                  title: Release ${{ steps.version.outputs.TAG_NAME }}
+                  files: ./dist/*.whl

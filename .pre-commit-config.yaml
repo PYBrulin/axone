@@ -9,6 +9,7 @@ repos:
         args: ["--pytest-test-first"]
       - id: check-toml
       - id: requirements-txt-fixer
+      - id: check-yaml
 
   - repo: https://github.com/pycqa/isort
     rev: 6.0.1
