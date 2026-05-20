@@ -138,10 +138,7 @@ def standard_data_encoding(*args, **kwargs) -> bytes:
             raise ValueError(f"Unknown attribute type {type(value)} for key-value pair\n\t{key}:'{value}'")
 
     if "encryption_key" in kwargs:
-        logging.critical("ENCRYPTING DATA")
         output = encrypt_data(output, key=kwargs["encryption_key"])
-    else:
-        logging.critical("No encryption key provided, not encrypting data")
 
     return output
 

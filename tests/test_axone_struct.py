@@ -210,7 +210,7 @@ class TestStandardDataEncoding(unittest.TestCase):
         self.assertEqual(standard_data_encoding(d='hello'), b'\x01\x00\x00\x00n1sdn5shello')
 
     def test_encode_multiple_attributes(self):
-        print(standard_data_encoding(a=True, b=1, c=1.0, d='hello'))
+        # print(standard_data_encoding(a=True, b=1, c=1.0, d='hello'))
         self.assertEqual(
             standard_data_encoding(a=True, b=1, c=1.0, d='hello'),
             b'\x04\x00\x00\x00n1sa?\x01n1sbi\x01\x00\x00\x00n1scd\x00\x00\x00\x00\x00\x00\xf0?n1sdn5shello',
