@@ -26,8 +26,10 @@ class Subscription:
         max_retries: int = 10,  # Maximum number of retries
         multicast_group: str = "224.1.1.1",  # Multicast group address
         timeout: float = 2.0,  # Timeout for socket operations
+        encryption_key: str | None = None,
     ) -> None:
         self._name: str = topic_name
+        self._encryption_key: str | None = encryption_key
         self._request_rate: float = rate
         self._topic_rate: float = None
         self._timestamp: float = 0
@@ -260,7 +262,7 @@ class Subscription:
 
         if encoded:
             logging.debug(f"Received message from {self._name}:{encoded}")
-            self._topic.decode(encoded)
+            self._topic.decode(encoded, encryption_key=self._encryption_key)
             self._timestamp = self._topic.timestamp_
             self._new_message = self._timestamp != self._last_timestamp
             self._last_timestamp = self._timestamp

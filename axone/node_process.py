@@ -10,6 +10,7 @@ import netifaces
 from axone.axone_struct import AxoneStruct
 from axone.common import find_free_port, generate_uuid, timeit_if_debug
 from axone.custom_logger import CustomFormatter  # noqa
+from axone.encryption import generate_encryption_key, load_encryption_key
 from axone.enums import Method
 from axone.node import AxoneNode
 from axone.publisher import Publisher
@@ -44,6 +45,18 @@ class AxoneNodeProcess(AxoneNode):
                         raise ValueError(f"Config file {self.config_file} is not a valid json file.")
             else:
                 raise FileNotFoundError(f"Config file {self.config_file} does not exist.")
+
+        # Try to load the encryption key if specified in the config file or kwargs
+        if "encryption_key_path" in kwargs and kwargs["encryption_key_path"] is not None:
+            encryption_key_path = kwargs["encryption_key_path"]
+            if os.path.exists(encryption_key_path):
+                kwargs["encryption_key"] = load_encryption_key(encryption_key_path)
+            else:
+                logging.error(f"Encryption key specified but file {encryption_key_path} does not exist. Creating one now.")
+                kwargs["encryption_key"] = (
+                    generate_encryption_key()
+                )  # Generate a new encryption key and save it to the default location
+        self.encryption_key: str | None = kwargs.get("encryption_key", None)
 
         # Node parameters
         self.name = name
@@ -247,7 +260,7 @@ class AxoneNodeProcess(AxoneNode):
             # Request a subscription to the topic and go fetch the struct now
             # So that the client gets an answer now (although it will be slow)
             # Create a new subscription
-            self.subscriptions[topic] = Subscription(topic)
+            self.subscriptions[topic] = Subscription(topic, encryption_key=self.encryption_key)
             logging.warning(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
             # Fetch the struct now
             # This is a blocking call
@@ -282,7 +295,7 @@ class AxoneNodeProcess(AxoneNode):
             # Request a subscription to the topic and go fetch the struct now
             # So that the client gets an answer now (although it will be slow)
             # Create a new subscription
-            self.subscriptions[topic] = Subscription(topic, method=method)
+            self.subscriptions[topic] = Subscription(topic, method=method, encryption_key=self.encryption_key)
             logging.info(f"Registering subscription {topic} for node {self.node_id}:{self.name}.")
             # Fetch the struct now
             # This is a blocking call

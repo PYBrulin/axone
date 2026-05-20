@@ -16,6 +16,7 @@ dynamic = ["version"]
 dependencies = [
     "asyncio",
     "crc",
+    "cryptography",
     "filelock",
     "netifaces",
     'portalocker ; platform_system == "Windows"',

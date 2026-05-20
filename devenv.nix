@@ -7,6 +7,7 @@
       requirements = ''
         asyncio
         crc
+        cryptography
         filelock
         netifaces
         portalocker ; platform_system == "Windows"

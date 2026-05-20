@@ -13,6 +13,7 @@ import netifaces
 from axone.axone_shm import CentralizedNode, SelfNode
 from axone.axone_struct import AxoneStruct, standard_data_decoding, standard_data_encoding
 from axone.common import find_free_port, generate_uuid, timeit_if_debug
+from axone.encryption import generate_encryption_key, load_encryption_key
 from axone.enums import Method
 from axone.publisher import Publisher
 from axone.service_server import ServiceServer, recv_msg, send_msg
@@ -42,6 +43,18 @@ class AxoneNode:
                         raise ValueError(f"Config file {self.config_file} is not a valid json file.")
             else:
                 raise FileNotFoundError(f"Config file {self.config_file} does not exist.")
+
+        # Try to load the encryption key if specified in the config file or kwargs
+        if "encryption_key_path" in kwargs and kwargs["encryption_key_path"] is not None:
+            encryption_key_path = kwargs["encryption_key_path"]
+            if os.path.exists(encryption_key_path):
+                kwargs["encryption_key"] = load_encryption_key(encryption_key_path)
+            else:
+                logging.error(f"Encryption key specified but file {encryption_key_path} does not exist. Creating one now.")
+                kwargs["encryption_key"] = (
+                    generate_encryption_key()
+                )  # Generate a new encryption key and save it to the default location
+        self.encryption_key: str | None = kwargs.get("encryption_key", None)
 
         # Node parameters
         self.name = name
@@ -307,6 +320,7 @@ class AxoneNode:
             publisher_address=publisher_address,
             publisher_port=publisher_port,
             publisher_port_range=publisher_port_range,
+            encryption_key=self.encryption_key,
         )
         logging.debug(f"Registered publisher {topic_name} at rate {rate} using {method}.")
         if method is Method.SOCKET:
@@ -349,6 +363,7 @@ class AxoneNode:
                 publisher_address=publisher_address,
                 publisher_port=publisher_port,
                 publisher_port_range=publisher_port_range,
+                encryption_key=self.encryption_key,
             )
             if method is Method.SOCKET:
                 self.update_zeroconf_topics()
@@ -432,7 +447,7 @@ class AxoneNode:
         # Add the callback to the list of callbacks for this topic
         if topic_name not in list(self.subscriptions):
             # Create a new subscription
-            self.subscriptions[topic_name] = Subscription(topic_name, method=method)
+            self.subscriptions[topic_name] = Subscription(topic_name, method=method, encryption_key=self.encryption_key)
             self.subscriptions[topic_name].callbacks.append(callback)
             logging.info(f"Registering subscription {topic_name} for node {self.node_id}:{self.name} using {method}.")
         else:
@@ -465,7 +480,7 @@ class AxoneNode:
         """Listen to a topic once."""
         method = method or self.default_method
         if topic not in self.subscriptions:
-            sub = Subscription(topic, method=method)
+            sub = Subscription(topic, method=method, encryption_key=self.encryption_key)
             self.subscriptions[topic] = sub
         else:
             sub = self.subscriptions[topic]
@@ -565,7 +580,7 @@ class AxoneNode:
 
         # Look for the response
         data = recv_msg(sock)
-        decoded_data = standard_data_decoding(data)
+        decoded_data = standard_data_decoding(data, **kwargs)
         logging.debug(f'received {decoded_data!r}')
 
         if answer_callback is not None and callable(answer_callback):

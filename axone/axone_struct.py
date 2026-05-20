@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from axone.common import timeit_if_debug
+from axone.encryption import decrypt_data, encrypt_data
 
 BYTES_PER_INT = struct.calcsize('i')  # TODO: Change to numpy dtypes
 
@@ -136,10 +137,19 @@ def standard_data_encoding(*args, **kwargs) -> bytes:
         else:
             raise ValueError(f"Unknown attribute type {type(value)} for key-value pair\n\t{key}:'{value}'")
 
+    if "encryption_key" in kwargs:
+        logging.critical("ENCRYPTING DATA")
+        output = encrypt_data(output, key=kwargs["encryption_key"])
+    else:
+        logging.critical("No encryption key provided, not encrypting data")
+
     return output
 
 
-def standard_data_decoding(data) -> dict:
+def standard_data_decoding(data, **kwargs) -> dict:
+    if "encryption_key" in kwargs:
+        data = decrypt_data(data, key=kwargs["encryption_key"])
+
     # Create an iterator from the data
     data_iter = iter(data)
 
@@ -154,7 +164,10 @@ def standard_data_decoding(data) -> dict:
         # Attribute name
         # Ensure the next character is a 'n' to indicate the length of the attribute name
         if next(data_iter) != ord('n'):
-            raise ValueError("Attribute name should start with 'n'")
+            raise ValueError(
+                "Attribute name should start with 'n'. Unable to decode data."
+                + "Are you trying to decode an encrypted message without providing the encryption key?"
+            )
         # Get the next characters until a 's' is found
         key_len = ""
         while True:
@@ -208,7 +221,7 @@ def standard_data_decoding(data) -> dict:
         elif attr_type == 'm':  # Dictionary type
             dict_len = struct.unpack('I', bytes(next(data_iter) for _ in range(struct.calcsize('I'))))[0]
             dict_data = bytes(next(data_iter) for _ in range(dict_len))
-            value = standard_data_decoding(dict_data)  # Recursive decoding
+            value = standard_data_decoding(dict_data, **kwargs)  # Recursive decoding
             logging.debug(f"Decoded dictionary {value} for attribute {key}")
 
         # ! AxoneStructs are not supported here
@@ -362,7 +375,7 @@ class AxoneStruct:
         return approx_size
 
     @timeit_if_debug
-    def encode(self) -> bytes:
+    def encode(self, encryption_key: str = None) -> bytes:
         """Encode all class attributes as bytes of minimum size
 
         Output binary should follow the following format:
@@ -472,11 +485,17 @@ class AxoneStruct:
             else:
                 raise ValueError(f"Unknown attribute type {type(value)} for key-value pair\n\t{key}:'{value}'")
 
+        if encryption_key is not None:
+            output = encrypt_data(output, key=encryption_key)
+
         return output
 
     @timeit_if_debug
-    def decode(self, data) -> None:
+    def decode(self, data, encryption_key: str = None) -> None:
         """Decode binary data and set attributes accordingly"""
+
+        if encryption_key is not None:
+            data = decrypt_data(data, key=encryption_key)
 
         # Display data size
         self.__logger__.debug(f"Decoding {len(data)} bytes")
@@ -493,7 +512,10 @@ class AxoneStruct:
             # Attribute name
             # Ensure the next character is a 'n' to indicate the length of the attribute name
             if next(data_iter) != ord('n'):
-                raise ValueError("Attribute name should start with 'n'")
+                raise ValueError(
+                    "Attribute name should start with 'n'. Unable to decode data."
+                    + "Are you trying to decode an encrypted message without providing the encryption key?"
+                )
             # Get the next characters until a 's' is found
             key_len = ""
             while True:
@@ -671,9 +693,9 @@ if __name__ == "__main__":
     #     "key3": "hello",
     # }
 
-    # encoded_data = standard_data_encoding(**data)
+    # encoded_data = standard_data_encoding(**data, **kwargs)
     # print(encoded_data)
-    # decoded_data = standard_data_decoding(encoded_data)
+    # decoded_data = standard_data_decoding(encoded_data, **kwargs)
     # print(decoded_data)
 
     # # Service

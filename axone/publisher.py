@@ -24,6 +24,7 @@ class Publisher:
         publisher_address: str = "224.1.1.1",  # Multicast address for UDP
         publisher_port: int = 0,  # Publisher port for UDP
         publisher_port_range: tuple = (40000, 45000),  # Range of ports for UDP
+        encryption_key: str | None = None,
     ) -> None:
         # Ensure that the topic is an instance of AxoneStruct or that it has inherited from it
         if not isinstance(topic, AxoneStruct):
@@ -39,6 +40,7 @@ class Publisher:
         self._publisher_address = publisher_address
         self._publisher_port_range = publisher_port_range
         self._publisher_port = find_free_port(self._publisher_port_range) if publisher_port == 0 else publisher_port
+        self._encryption_key: str | None = encryption_key
 
         # Check if the network interface exists
         if self._publisher_interface not in netifaces.interfaces():
@@ -142,7 +144,7 @@ class Publisher:
         self._topic.source_ = self._source
         self._topic.rate_ = self._rate
         self._topic.timestamp_ = time.time()
-        encoded = self._topic.encode()
+        encoded = self._topic.encode(encryption_key=self._encryption_key)
         logging.debug(f"{len(encoded)} bytes encoded for topic {self._name}")
 
         if self._method is Method.SHARED_MEMORY:

@@ -57,6 +57,7 @@ class ServiceServer:
         method: Method | None = None,
         service_interface: str = "lo",  # Network interface for TCP
         server_port: int | None = None,  # Network port for the TCP. Can be set manually or set by the server itself.
+        **kwargs,
     ) -> None:
         self.sock = None
         self.node_uuid = node_uuid
@@ -64,6 +65,7 @@ class ServiceServer:
         self._server_interface = service_interface
         self._server_port = server_port
         self._server_address = None
+        self.kwargs = kwargs
 
         # Check if the network interface exists
         if self._server_interface not in netifaces.interfaces():
@@ -113,7 +115,7 @@ class ServiceServer:
         # arguments = arguments[:-1].split(",")
 
         # decoded_data = data  # .decode("utf-8")
-        decoded_data = standard_data_decoding(data)
+        decoded_data = standard_data_decoding(data, **self.kwargs)
         service_name = decoded_data.pop("func", None)
         if service_name is None:
             logging.error("Invalid data format. No service name provided.")
@@ -209,7 +211,7 @@ class ServiceServer:
                             logging.debug(f'Received {data!r}')
                             ret, out = self.find_and_call_service(data)
                             logging.debug('Sending data back to the client')
-                            send_msg(connection, standard_data_encoding(ret=ret, out=out))
+                            send_msg(connection, standard_data_encoding(ret=ret, out=out, **self.kwargs))
                         else:
                             logging.debug(f'No more data from {client_address}')
                             break

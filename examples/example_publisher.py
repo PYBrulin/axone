@@ -39,9 +39,10 @@ class ExampleNodePublisher:
     - topic_published_rate_func : publish a message at a fixed rate from a callback function
     """
 
-    def __init__(self, use_process: bool = False, use_shared_memory: bool = False) -> None:
+    def __init__(self, use_process: bool = False, use_shared_memory: bool = False, use_encryption: bool = False) -> None:
         self.use_process = use_process
         self.use_shared_memory = use_shared_memory
+        self.use_encryption = use_encryption
         self.method = Method.SOCKET if not self.use_shared_memory else Method.SHARED_MEMORY
         # Register node
         NodeClass = AxoneNode if not self.use_process else AxoneNodeProcess
@@ -51,6 +52,7 @@ class ExampleNodePublisher:
             centralized_memory_endpoint="ExampleNodeMemory",
             # Here we load a config file next to this script
             config_file=os.path.join(os.path.dirname(__file__), "axone.json"),
+            encryption_key_path=os.path.join(os.path.dirname(__file__), "encryption.key") if self.use_encryption else None,
         )
 
     def run(self) -> NoReturn:
@@ -102,8 +104,9 @@ if __name__ == "__main__":
     argparser.add_argument("-d", "--debug", action="store_true")
     argparser.add_argument("-p", "--process", action="store_true")
     argparser.add_argument("-shm", "--shared-memory", action="store_true")
+    argparser.add_argument("-e", "--encryption", action="store_true")
     args = argparser.parse_args()
 
     setup_logger(debug=args.debug)
-    node = ExampleNodePublisher(use_process=args.process, use_shared_memory=args.shared_memory)
+    node = ExampleNodePublisher(use_process=args.process, use_shared_memory=args.shared_memory, use_encryption=args.encryption)
     node.run()
