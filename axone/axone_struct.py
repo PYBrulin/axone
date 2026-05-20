@@ -147,7 +147,8 @@ def standard_data_encoding(*args, **kwargs) -> bytes:
 
 
 def standard_data_decoding(data, **kwargs) -> dict:
-    if "encryption_key" in kwargs:
+    decrypt = kwargs.pop("_decrypt", True)
+    if decrypt and "encryption_key" in kwargs:
         data = decrypt_data(data, key=kwargs["encryption_key"])
 
     # Create an iterator from the data
@@ -221,7 +222,7 @@ def standard_data_decoding(data, **kwargs) -> dict:
         elif attr_type == 'm':  # Dictionary type
             dict_len = struct.unpack('I', bytes(next(data_iter) for _ in range(struct.calcsize('I'))))[0]
             dict_data = bytes(next(data_iter) for _ in range(dict_len))
-            value = standard_data_decoding(dict_data, **kwargs)  # Recursive decoding
+            value = standard_data_decoding(dict_data, _decrypt=False, **kwargs)  # Recursive decoding
             logging.debug(f"Decoded dictionary {value} for attribute {key}")
 
         # ! AxoneStructs are not supported here

@@ -1,6 +1,8 @@
 import time
 import unittest
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from axone.axone_struct import AxoneStruct, AxoneTopic, standard_data_decoding, standard_data_encoding
 
 # Required to disable error reporting for long lines
@@ -293,6 +295,102 @@ class TestStandardDataEncoding(unittest.TestCase):
     def test_decode_unsupported_type(self):
         with self.assertRaises(ValueError):
             standard_data_decoding(b'\x01\x00\x00\x00A\x01')
+
+
+class TestEncryptionCapabilities(unittest.TestCase):
+    def setUp(self) -> None:
+        self.encryption_key = Fernet.generate_key().decode()
+        self.wrong_encryption_key = Fernet.generate_key().decode()
+
+    def test_axone_struct_encode_decode_with_encryption(self):
+        topic = ATopicPassedToAxone()
+        topic.h = "hello encrypted"
+        topic.c = 42
+
+        unencrypted = topic.encode()
+        encrypted = topic.encode(encryption_key=self.encryption_key)
+        self.assertNotEqual(unencrypted, encrypted)
+
+        topic_decoded = AxoneStruct()
+        topic_decoded.decode(encrypted, encryption_key=self.encryption_key)
+
+        self.assertEqual(topic_decoded.h, "hello encrypted")
+        self.assertEqual(topic_decoded.c, 42)
+
+    def test_axone_struct_nested_payload_encode_decode_with_encryption(self):
+        topic = ATopicPassedToAxone()
+        topic.h = "top level"
+
+        topic.xyz = AxoneStruct()
+        topic.xyz.label = "first level"
+        topic.xyz.count = 7
+        topic.xyz.inner = AxoneStruct()
+        topic.xyz.inner.flag = True
+        topic.xyz.inner.value = 3.14
+        topic.xyz.inner.message = "second level"
+
+        encrypted = topic.encode(encryption_key=self.encryption_key)
+
+        topic_decoded = AxoneStruct()
+        topic_decoded.decode(encrypted, encryption_key=self.encryption_key)
+
+        self.assertEqual(topic_decoded.h, "top level")
+        self.assertEqual(topic_decoded.xyz.label, "first level")
+        self.assertEqual(topic_decoded.xyz.count, 7)
+        self.assertEqual(topic_decoded.xyz.inner.flag, True)
+        self.assertEqual(topic_decoded.xyz.inner.value, 3.14)
+        self.assertEqual(topic_decoded.xyz.inner.message, "second level")
+
+    def test_axone_struct_decode_encrypted_without_key_raises(self):
+        topic = ATopicPassedToAxone()
+        encrypted = topic.encode(encryption_key=self.encryption_key)
+
+        topic_decoded = AxoneStruct()
+        with self.assertRaises(ValueError):
+            topic_decoded.decode(encrypted)
+
+    def test_axone_struct_decode_encrypted_with_wrong_key_raises(self):
+        topic = ATopicPassedToAxone()
+        encrypted = topic.encode(encryption_key=self.encryption_key)
+
+        topic_decoded = AxoneStruct()
+        with self.assertRaises(InvalidToken):
+            topic_decoded.decode(encrypted, encryption_key=self.wrong_encryption_key)
+
+    def test_standard_data_encoding_decoding_with_encryption(self):
+        payload = {"a": 1, "b": "hello"}
+
+        encrypted = standard_data_encoding(**payload, encryption_key=self.encryption_key)
+        decoded = standard_data_decoding(encrypted, encryption_key=self.encryption_key)
+
+        self.assertEqual(decoded["a"], 1)
+        self.assertEqual(decoded["b"], "hello")
+
+    def test_standard_data_nested_dict_encoding_decoding_with_encryption(self):
+        payload = {
+            "key1": 123,
+            "key2": {
+                "nested_key1": "value1",
+                "nested_key2": 3.14,
+                "nested_key3": [True, False, 42],
+            },
+            "key3": "hello",
+        }
+
+        encrypted = standard_data_encoding(**payload, encryption_key=self.encryption_key)
+        decoded = standard_data_decoding(encrypted, encryption_key=self.encryption_key)
+
+        self.assertEqual(decoded["key1"], 123)
+        self.assertEqual(decoded["key2"]["nested_key1"], "value1")
+        self.assertEqual(decoded["key2"]["nested_key2"], 3.14)
+        self.assertEqual(decoded["key2"]["nested_key3"], [True, False, 42])
+        self.assertEqual(decoded["key3"], "hello")
+
+    def test_standard_data_decoding_with_wrong_key_raises(self):
+        encrypted = standard_data_encoding(a=1, encryption_key=self.encryption_key)
+
+        with self.assertRaises(InvalidToken):
+            standard_data_decoding(encrypted, encryption_key=self.wrong_encryption_key)
 
 
 if __name__ == '__main__':
