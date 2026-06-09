@@ -1,0 +1,81 @@
+name: Delete old workflow runs
+
+on:
+    workflow_call:
+
+# permissions:
+#     contents: write
+#     issues: write
+#     pull-requests: write
+
+jobs:
+    release_stable:
+        if: ${{ github.ref == 'refs/heads/stable' }}
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            issues: write
+            pull-requests: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Download build artifacts
+              uses: actions/download-artifact@v8
+              with:
+                  path: dist
+
+            - name: Debug downloaded files
+              run: |
+                  ls -R dist
+
+            - name: Setup Node
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "lts/*"
+
+            - name: Install semantic-release
+              run: |
+                  npm i -g semantic-release \
+                    @semantic-release/commit-analyzer \
+                    @semantic-release/release-notes-generator \
+                    @semantic-release/changelog \
+                    @semantic-release/github \
+                    @semantic-release/git \
+                    conventional-changelog-conventionalcommits
+
+            - name: Run semantic-release
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: semantic-release
+
+    release_devel:
+        if: ${{ github.ref != 'refs/heads/stable' }}
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Download build artifacts
+              uses: actions/download-artifact@v8
+              with:
+                  path: dist
+
+            - name: Recreate mutable development release (tag to ref)
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
+                    gh release delete ${{ github.ref_name }} --yes --cleanup-tag
+                  fi
+
+                  gh release create ${{ github.ref_name }} \
+                    dist/* \
+                    --target "${GITHUB_SHA}" \
+                    --title "Latest (nightly)" \
+                    --notes "Nightly build from devel @ ${GITHUB_SHA}" \
+                    --latest

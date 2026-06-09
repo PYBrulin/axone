@@ -3,6 +3,7 @@ axone/_version.py
 *.json
 *.bin
 !examples/axone.json
+!.releaserc.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
