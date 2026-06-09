@@ -1,12 +1,7 @@
-name: Delete old workflow runs
+name: Release
 
 on:
     workflow_call:
-
-# permissions:
-#     contents: write
-#     issues: write
-#     pull-requests: write
 
 jobs:
     release_stable:
@@ -52,7 +47,7 @@ jobs:
               run: semantic-release
 
     release_devel:
-        if: ${{ github.ref != 'refs/heads/stable' }}
+        if: ${{ startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/stable' }}
         runs-on: ubuntu-latest
         permissions:
             contents: write
@@ -69,13 +64,120 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
-                  if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
-                    gh release delete ${{ github.ref_name }} --yes --cleanup-tag
+                  if gh release view latest_${{ github.ref_name }} >/dev/null 2>&1; then
+                    gh release delete latest_${{ github.ref_name }} --yes --cleanup-tag
                   fi
 
-                  gh release create ${{ github.ref_name }} \
+                  gh release create latest_${{ github.ref_name }} \
                     dist/* \
                     --target "${GITHUB_SHA}" \
                     --title "Latest (nightly)" \
                     --notes "Nightly build from devel @ ${GITHUB_SHA}" \
                     --latest
+
+    release_custom_tag:
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-') }}
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Download build artifacts
+              uses: actions/download-artifact@v8
+              with:
+                  path: dist
+
+            - name: Setup Node
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "lts/*"
+
+            - name: Generate release notes
+              env:
+                  NEXT_TAG: ${{ github.ref_name }}
+              run: |
+                  PREV_TAG=$(git tag --sort=-version:refname \
+                    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+                    | head -1)
+
+                  npm install --no-save \
+                    @semantic-release/release-notes-generator \
+                    conventional-changelog-conventionalcommits
+
+                  PREV_TAG=$PREV_TAG node << 'EOF'
+                  const releaseNotesGenerator = require('@semantic-release/release-notes-generator');
+                  const { execSync } = require('child_process');
+                  const fs = require('fs');
+
+                  async function main() {
+                    const prevTag = process.env.PREV_TAG;
+                    const nextTag = process.env.NEXT_TAG;
+                    const repoUrl = process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY;
+
+                    const range = prevTag ? prevTag + '..HEAD' : 'HEAD';
+                    const raw = execSync(
+                      `git log "${range}" --format="%x1E%H%x1F%s%x1F%b"`,
+                      { encoding: 'utf8' }
+                    );
+
+                    const commits = raw
+                      .split('\x1E')
+                      .filter(Boolean)
+                      .map(record => {
+                        const [hash, subject, body] = record.split('\x1F');
+                        const message = [subject, body].filter(Boolean).join('\n\n').trim();
+                        return { hash: hash.trim(), message };
+                      });
+
+                    const releaserc = JSON.parse(fs.readFileSync('.releaserc.json', 'utf8'));
+                    const pluginConfig = releaserc.plugins
+                      .find(p => Array.isArray(p) && p[0] === '@semantic-release/release-notes-generator')[1];
+
+                    const prevHead = prevTag
+                      ? execSync(`git rev-parse "${prevTag}"`, { encoding: 'utf8' }).trim()
+                      : '';
+                    const nextHead = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+
+                    const context = {
+                      commits,
+                      lastRelease: {
+                        gitTag: prevTag || '',
+                        version: prevTag ? prevTag.replace(/^v/, '') : '0.0.0',
+                        gitHead: prevHead,
+                      },
+                      nextRelease: {
+                        type: 'prerelease',
+                        version: nextTag.replace(/^v/, ''),
+                        gitTag: nextTag,
+                        gitHead: nextHead,
+                        channel: 'prerelease',
+                      },
+                      options: { repositoryUrl: repoUrl },
+                      logger: { log: console.log, error: console.error },
+                    };
+
+                    const notes = await releaseNotesGenerator.generateNotes(pluginConfig, context);
+                    fs.writeFileSync('RELEASE_NOTES.md', notes);
+                    console.log('Release notes written to RELEASE_NOTES.md');
+                  }
+
+                  main().catch(e => { console.error(e); process.exit(1); });
+                  EOF
+
+            - name: Create prerelease
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+                    gh release delete "${{ github.ref_name }}" --yes --cleanup-tag
+                  fi
+
+                  gh release create "${{ github.ref_name }}" \
+                    dist/* \
+                    --title "${{ github.ref_name }}" \
+                    --notes-file RELEASE_NOTES.md \
+                    --prerelease
