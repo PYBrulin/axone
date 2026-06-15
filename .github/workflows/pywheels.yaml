@@ -12,15 +12,65 @@ jobs:
         with:
           fetch-depth: 0 # Fetch all history for all tags and branches
 
-      # Keep release title in sync with the latest matching tag
+      - name: Setup Node
+        if: github.ref == 'refs/heads/stable'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+
+      # On stable, @semantic-release/commit-analyzer will be used to compute the next version based on the commit history,
+      # which is needed for the release step. On other branches, the version will be retrieved from git tags.
+      - name: Compute next semantic-release version
+        id: next_version
+        if: github.ref == 'refs/heads/stable'
+        run: |
+          npm i -g semantic-release \
+            @semantic-release/commit-analyzer \
+            conventional-changelog-conventionalcommits
+
+          # Strip the GitHub plugin from the config
+          trap 'cp .releaserc.json.bak .releaserc.json && rm .releaserc.json.bak' EXIT
+          cp .releaserc.json .releaserc.json.bak
+          node -e "
+            const rc = require('./.releaserc.json');
+            const analyzer = rc.plugins.find(p => Array.isArray(p) && p[0] === '@semantic-release/commit-analyzer');
+            require('fs').writeFileSync('.releaserc.json', JSON.stringify({ branches: rc.branches, plugins: [analyzer] }));
+          "
+
+          SR_OUTPUT=$(semantic-release --dry-run 2>&1)
+          echo "$SR_OUTPUT"
+          NEXT=$(echo "$SR_OUTPUT" \
+            | grep -oP '(?<=The next release version is )\d+\.\d+\.\d+' | head -1)
+          if [ -n "$NEXT" ] && ! git tag --list | grep -qx "v${NEXT}"; then
+            echo "TAG_NAME=v${NEXT}" >> $GITHUB_OUTPUT
+          fi
+
+      # Note: This step will overwrite the current version.py contained in this repository to keep it up-to-date during the build
       - name: Retrieve version from git tags
         id: version
         run: |
-          echo "TAG_NAME=$(git describe --match "v*" --tags)" >> $GITHUB_OUTPUT
+          COMPUTED="${{ steps.next_version.outputs.TAG_NAME }}"
+          if [ -n "$COMPUTED" ]; then
+            echo "TAG_NAME=$COMPUTED" >> $GITHUB_OUTPUT
+          else
+            echo "TAG_NAME=$(git describe --match 'v*' --tags)" >> $GITHUB_OUTPUT
+          fi
 
+      # Used to host cibuildwheel
       - uses: actions/setup-python@v6
         with:
           python-version: "3.10"
+
+      - name: Install package
+        run: python -m pip install .
+
+      - name: Build wheels
+        run: |
+          VERSION="${{ steps.next_version.outputs.TAG_NAME }}"
+          if [ -n "$VERSION" ]; then
+            export SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}"
+          fi
+          python -m pip wheel -w dist .
 
       - name: Build wheels
         run: python -m pip wheel -w dist .

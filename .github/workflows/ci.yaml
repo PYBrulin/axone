@@ -1,6 +1,17 @@
 name: CI Pipeline
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches:
+      - stable
+      - devel
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - stable
+      - devel
+  workflow_dispatch:
 
 jobs:
   pre-commit:
