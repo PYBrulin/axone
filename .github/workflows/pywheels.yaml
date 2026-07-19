@@ -14,7 +14,7 @@ jobs:
 
       - name: Setup Node
         if: github.ref == 'refs/heads/stable'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "lts/*"
 
