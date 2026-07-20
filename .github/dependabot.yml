@@ -1,11 +1,16 @@
 version: 2
 updates:
   # Set update schedule for GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: devel
+    groups:
+      github-actions:
+        patterns:
+          - "*" # Group all Actions updates into a single larger pull request
     schedule:
       # Check for updates to GitHub Actions every week
-      interval: "weekly"
+      interval: weekly
     commit-message:
       prefix: "chore"
       include: "scope"
